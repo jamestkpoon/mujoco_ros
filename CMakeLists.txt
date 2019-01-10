@@ -73,10 +73,10 @@ find_library(reflexxesII_lib ReflexxesTypeII)
 # )
 
 ## Generate services in the 'srv' folder
- add_service_files(
-   FILES
-   JointCmd.srv
- )
+# add_service_files(
+#   FILES
+#   JointCmd.srv
+# )
 
 ## Generate actions in the 'action' folder
 # add_action_files(
@@ -86,10 +86,10 @@ find_library(reflexxesII_lib ReflexxesTypeII)
 # )
 
 ## Generate added messages and services with any dependencies listed here
- generate_messages(
-   DEPENDENCIES
-   std_msgs
- )
+# generate_messages(
+#   DEPENDENCIES
+#   std_msgs
+# )
 
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##

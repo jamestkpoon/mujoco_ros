@@ -1,6 +1,6 @@
 <mujoco>
 
-    <compiler angle="radian" meshdir="meshes" />
+    <compiler angle="radian" meshdir="ur5_meshes"/>
 
     <option gravity="0 0 0" cone="elliptic" timestep="0.02" />
 
@@ -8,6 +8,7 @@
 
     <visual>
         <map znear="0.001" />
+        <headlight active="0"/>
     </visual>
 
     <default>
@@ -51,14 +52,12 @@
             </body>
         </body>
 
-        <light directional="true" pos="-0.5 0.5 3" dir="0 0 -1" />
-        <light directional="false" pos="-0.5 0.5 1.5" dir="0 -1 0" />
-        <geom name="workbench_down" pos="-0.6 0.6 -0.25" size="0.6 0.6 0.25" type="box" rgba="0 0 0 1" material="BasketMat" />
-        <geom name="floor" pos="0 0 -0.66" size="10 10 1" type="plane" rgba="1 0.83 0.61 1" material="BasketMat" />
-        <geom name="wall_1" pos="0 -1.4 1" size="2.5 2.5 1" type="plane" quat="0.707107 -0.707107 0 0" rgba="0.95 0.95 0.95 1" material="BasketMat" />
-        <geom name="wall_2" pos="-2.185 0 1" size="2.5 2.5 1" type="plane" quat="0.707107 0 0.707107 0" rgba="0.95 0.95 0.95 1" material="BasketMat" />
+        <light pos="0 0 3" castshadow="true" directional="true" dir="0 0 -1" />
+        <geom name="floor" pos="0 0 0" quat="0 0 0 1" size="5 5 1" type="plane" rgba="1 0.83 0.61 1" material="BasketMat" />
+        <geom name="table" pos="0.8 0 0.4" size="1 0.5 0.4" type="box" rgba="1 0.83 0.61 1" material="BasketMat"/>
+        <geom name="stand" pos="0 0 0.9" size="0.1 0.1 0.1" type="box" rgba="1 0.83 0.61 1" material="BasketMat"/>
 
-        <body name="base_link" pos="-0.175 0.175 0" quat="0.3826834324 0 0 0.9238795325" >
+        <body name="base_link" pos="0 0 1" quat="0 0 0 1" >
             <inertial pos="0 0 0" quat="0.5 0.5 -0.5 0.5" mass="4" diaginertia="0.0072 0.00443333 0.00443333" />
             <geom name="base_mesh" type="mesh" mesh="base" material="RobMat" />
             <geom name="base_cap" type="cylinder" pos="0 0 0.14" size="0.06 0.02" rgba="0.596 0.96 1 1" material="RobMat" contype="0" conaffinity="0" />

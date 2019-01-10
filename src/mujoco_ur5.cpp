@@ -1,7 +1,7 @@
 // ROS
 #include "ros/ros.h"
-#include "mujoco_ros/JointCmd.h"
-#include "std_srvs/SetBool.h"
+#include "std_msgs/Float32MultiArray.h"
+#include "std_msgs/Bool.h"
 // MuJoCo
 #include "mujoco.h"
 #include "glfw3.h"
@@ -10,6 +10,9 @@
 #include <RMLPositionFlags.h>
 #include <RMLPositionInputParameters.h>
 #include <RMLPositionOutputParameters.h>
+
+// UR5 joint offsets
+const double UR5_joint_offsets[6] = { 0.0, M_PI, 0.0, M_PI, 0.0, 0.0 };
 
 // Reflexxes for UR5 control
 const int UR5_DOF = 6;
@@ -68,9 +71,9 @@ void mouse_move(GLFWwindow* window, double xpos, double ypos)
 
     // determine action based on mouse button
     mjtMouse action;
-    if( button_right )
+    if( button_left )
         action = mod_shift ? mjMOUSE_MOVE_H : mjMOUSE_MOVE_V;
-    else if( button_left )
+    else if( button_middle )
         action = mod_shift ? mjMOUSE_ROTATE_H : mjMOUSE_ROTATE_V;
     else
         action = mjMOUSE_ZOOM;
@@ -87,10 +90,12 @@ void scroll(GLFWwindow* window, double xoffset, double yoffset)
 
 // ROS callbacks
 
-bool jointpos_cmd(mujoco_ros::JointCmd::Request& req,
-  mujoco_ros::JointCmd::Request& res)
+void jpos_cb(const std_msgs::Float32MultiArray& msg)
 {
-  int nsteps_ = req.joint_state.size() / UR5_DOF;
+  int nsteps_ = msg.data.size() / UR5_DOF;
+  
+  double vC_ = 0.0;
+  if(msg.data.size()%UR5_DOF != 0) vC_ = msg.data.back();
   
   if(nsteps_ > 0)
   {
@@ -99,7 +104,7 @@ bool jointpos_cmd(mujoco_ros::JointCmd::Request& req,
     for(int i=0; i<nsteps_; i++)
     {
       std::vector<double> d_(UR5_DOF);
-      for(int j=0; j<UR5_DOF; j++) d_[j] = req.joint_state[i_++];
+      for(int j=0; j<UR5_DOF; j++) d_[j] = msg.data[i_++] - UR5_joint_offsets[j];
       UR5_jpos.push_back(d_);
     }
     
@@ -108,23 +113,18 @@ bool jointpos_cmd(mujoco_ros::JointCmd::Request& req,
     for(int i=0; i<nsteps_-1; i++)
     {
       std::vector<double> d_(UR5_DOF);
-      for(int j=0; j<UR5_DOF; j++) d_[j] = req.vC * (UR5_jpos[i+1][j]-UR5_jpos[i][j]);
+      for(int j=0; j<UR5_DOF; j++) d_[j] = vC_ * (UR5_jpos[i+1][j]-UR5_jpos[i][j]);
       UR5_jvel.push_back(d_);
     }
     UR5_jvel.push_back(std::vector<double>(UR5_DOF, 0.0));
     
     UR5_traj_step = 0; UR5_traj_steps = nsteps_; UR5_traj_in = true;
-  }
-  
-  return true;
+  }  
 }
 
-bool gripper_cmd(std_srvs::SetBool::Request& req,
-  std_srvs::SetBool::Response& res)
+void gripper_cb(const std_msgs::Bool& msg)
 {
-  gripper_in = req.data;
-
-  return true;
+  gripper_in = msg.data;
 }
 
 int main(int argc, char **argv)
@@ -133,9 +133,9 @@ int main(int argc, char **argv)
   
   ros::init(argc, argv, "mujoco_ur5");
   ros::NodeHandle nh_;
-  
-  ros::ServiceServer jpos_srv_ = nh_.advertiseService("/mujoco/ur5/joint_cmd", &jointpos_cmd),
-    gri_srv_ = nh_.advertiseService("/mujoco/ur5/gripper_cmd", &gripper_cmd);
+    
+  ros::Subscriber jpos_sub_ = nh_.subscribe("/mujoco/ur5/command/joint_positions", 1, jpos_cb),
+    gri_sub_ = nh_.subscribe("/mujoco/ur5/command/gripper", 1, gripper_cb);
   
   //// MuJoCo/GLFW stuff
   
