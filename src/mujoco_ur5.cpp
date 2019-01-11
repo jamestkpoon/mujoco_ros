@@ -12,7 +12,7 @@
 #include <RMLPositionOutputParameters.h>
 
 // UR5 joint offsets
-const double UR5_joint_offsets[6] = { 0.0, M_PI, 0.0, M_PI, 0.0, 0.0 };
+//const double UR5_joint_offsets[6] = { 0.0, M_PI, 0.0, M_PI, 0.0, 0.0 };
 
 // Reflexxes for UR5 control
 const int UR5_DOF = 6;
@@ -94,9 +94,6 @@ void jpos_cb(const std_msgs::Float32MultiArray& msg)
 {
   int nsteps_ = msg.data.size() / UR5_DOF;
   
-  double vC_ = 0.0;
-  if(msg.data.size()%UR5_DOF != 0) vC_ = msg.data.back();
-  
   if(nsteps_ > 0)
   {
     // target joint positions
@@ -104,11 +101,13 @@ void jpos_cb(const std_msgs::Float32MultiArray& msg)
     for(int i=0; i<nsteps_; i++)
     {
       std::vector<double> d_(UR5_DOF);
-      for(int j=0; j<UR5_DOF; j++) d_[j] = msg.data[i_++] - UR5_joint_offsets[j];
+      for(int j=0; j<UR5_DOF; j++) d_[j] = msg.data[i_++];// - UR5_joint_offsets[j];
       UR5_jpos.push_back(d_);
     }
     
     // target joint velocities
+    double vC_ = 1.0;
+    if(msg.data.size()%UR5_DOF == 1) vC_ = msg.data.back();
     UR5_jvel.clear();
     for(int i=0; i<nsteps_-1; i++)
     {
@@ -132,19 +131,19 @@ int main(int argc, char **argv)
   //// ROS stuff
   
   ros::init(argc, argv, "mujoco_ur5");
-  ros::NodeHandle nh_;
+  ros::NodeHandle nh_, ur_nh_("ur5");
     
-  ros::Subscriber jpos_sub_ = nh_.subscribe("/mujoco/ur5/command/joint_positions", 1, jpos_cb),
-    gri_sub_ = nh_.subscribe("/mujoco/ur5/command/gripper", 1, gripper_cb);
+  ros::Subscriber jpos_sub_ = ur_nh_.subscribe("command/joint_positions", 1, jpos_cb),
+    gri_sub_ = ur_nh_.subscribe("command/gripper", 1, gripper_cb);
   
   //// MuJoCo/GLFW stuff
   
   // activate MuJoCo
-  std::string mujoco_key_; nh_.getParam("/mujoco_key", mujoco_key_);
+  std::string mujoco_key_; nh_.getParam("key", mujoco_key_);
   mj_activate(mujoco_key_.c_str());
 
   // load model
-  std::string mujoco_xml_; nh_.getParam("/mujoco_xml", mujoco_xml_);
+  std::string mujoco_xml_; nh_.getParam("xml", mujoco_xml_);
   char error[1000];
   m = mj_loadXML(mujoco_xml_.c_str(), NULL, error, 1000);
   d = mj_makeData(m);
@@ -178,7 +177,7 @@ int main(int argc, char **argv)
     gri_r_jI = mj_name2id(m, mjOBJ_JOINT, "joint7_1");
     
   // "settle" the simulation by starting at a certain timestamp
-  double settle_time_; nh_.getParam("/mujoco_start_time", settle_time_);
+  double settle_time_; nh_.getParam("start_time", settle_time_);
   while(d->time < settle_time_) mj_step(m, d);
   
   ////
@@ -206,7 +205,7 @@ int main(int argc, char **argv)
 
   //// main loop
   
-  int fps_; nh_.getParam("/mujoco_FPS", fps_); double FPS_period = 1.0 / fps_;
+  int fps_; nh_.getParam("FPS", fps_); double FPS_period = 1.0 / fps_;
   
   while(!glfwWindowShouldClose(window) && ros::ok())
   {
@@ -219,7 +218,7 @@ int main(int argc, char **argv)
       if(rml_api_ == NULL) // start new motion
       {
         rml_api_ = new ReflexxesAPI(UR5_DOF, FPS_period);
-        nh_.setParam("/mujoco/ur5/moving", true);
+        ur_nh_.setParam("moving", true);
         // set target position and velocity
         for(int i=0; i<UR5_DOF; i++)
         {          
@@ -247,7 +246,7 @@ int main(int argc, char **argv)
       }
 
       if(UR5_traj_step == UR5_traj_steps)
-        { nh_.setParam("/mujoco/ur5/moving", false); UR5_traj_in = false; }
+        { ur_nh_.setParam("moving", false); UR5_traj_in = false; }
     }
     
     // gripper control

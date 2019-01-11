@@ -1,0 +1,52 @@
+<mujoco>
+
+    <compiler angle="radian"/>
+
+    <option gravity="0 0 0" cone="elliptic" timestep="0.02" />
+
+    <size njmax="500" nconmax="100" />
+
+    <visual>
+        <map znear="0.001" />
+        <headlight active="1"/>
+    </visual>
+
+    <default>
+        <light castshadow="true" diffuse="1 1 1" />
+        <joint frictionloss="1" damping="1" />
+        <camera fovy="60" />
+        <motor gear="0.8"/>
+        <velocity kv="10"/>
+        <position kp="5"/>
+    </default>
+
+    <asset>
+        <material name="RobMat" specular="0.9" shininess="0.5" reflectance="0" rgba="0.7 0.7 0.7 1" emission="0.1" />
+        <material name="GriMat" specular="0.9" shininess="0.5" reflectance="0" rgba="0.1 0.1 0.1 1" emission="0.1" />
+        <material name="BasketMat" specular="0" shininess="0" reflectance="0" rgba="0.26 0.16 0.16796875 1" emission="0" />
+        <material name="Light" specular="0" shininess="0.6" reflectance="0.9" rgba="0.5 0.5 1 1" emission="0.7" />        
+        <mesh file="objects/oscad_meshlab_test.stl" scale="0.001 0.001 0.001"/>
+    </asset>
+    
+   <worldbody>
+
+        <!-- Lighting and furniture -->
+        <light pos="0 0 3" castshadow="true" directional="true" dir="0 0 -1" />
+        <geom name="floor" pos="0 0 0" quat="0 0 0 1" size="5 5 1" type="plane" rgba="1 0.83 0.61 1" material="BasketMat" />
+        <geom name="table" pos="0.8 0 0.4" size="1 0.5 0.4" type="box" rgba="1 0.83 0.61 1" material="BasketMat"/>
+        <geom name="stand" pos="0 0 0.9" size="0.1 0.1 0.1" type="box" rgba="1 0.83 0.61 1" material="BasketMat"/>
+        
+        <!-- Other scene objects -->
+        <geom name="bolt" pos="0 0 1" type="mesh" mesh="oscad_meshlab_test" rgba="0.5 0.5 0.5 1" material="BasketMat"/>
+
+   </worldbody>
+
+    <actuator>
+
+    </actuator>
+    
+    <sensor>
+
+    </sensor>
+    
+</mujoco>

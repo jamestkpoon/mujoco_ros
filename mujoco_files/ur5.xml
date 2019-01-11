@@ -1,6 +1,6 @@
 <mujoco>
 
-    <compiler angle="radian" meshdir="ur5_meshes"/>
+    <compiler angle="radian"/>
 
     <option gravity="0 0 0" cone="elliptic" timestep="0.02" />
 
@@ -8,7 +8,7 @@
 
     <visual>
         <map znear="0.001" />
-        <headlight active="0"/>
+        <headlight active="1"/>
     </visual>
 
     <default>
@@ -19,29 +19,34 @@
         <velocity kv="10"/>
         <position kp="5"/>
     </default>
+    
+    
 
     <asset>
-        <mesh file="base.stl" />
-        <mesh file="shoulder.stl" />
-        <mesh file="upperarm.stl" />
-        <mesh file="forearm.stl" />
-        <mesh file="wrist1.stl" />
-        <mesh file="wrist2.stl" />
-        <mesh file="wrist3.stl" />
-        <mesh file="kinova_robotiq_coupler.stl" />
-        <mesh file="robotiq_85_base_link.stl" />
-        <mesh file="robotiq_85_finger_link.stl" />
-        <mesh file="robotiq_85_finger_tip_link.stl" />
-        <mesh file="robotiq_85_inner_knuckle_link.stl" />
-        <mesh file="robotiq_85_knuckle_link.stl" />
+        <mesh file="ur5/base.stl" />
+        <mesh file="ur5/shoulder.stl" />
+        <mesh file="ur5/upperarm.stl" />
+        <mesh file="ur5/forearm.stl" />
+        <mesh file="ur5/wrist1.stl" />
+        <mesh file="ur5/wrist2.stl" />
+        <mesh file="ur5/wrist3.stl" />
+        <mesh file="ur5/kinova_robotiq_coupler.stl" />
+        <mesh file="ur5/robotiq_85_base_link.stl" />
+        <mesh file="ur5/robotiq_85_finger_link.stl" />
+        <mesh file="ur5/robotiq_85_finger_tip_link.stl" />
+        <mesh file="ur5/robotiq_85_inner_knuckle_link.stl" />
+        <mesh file="ur5/robotiq_85_knuckle_link.stl" />
         <material name="RobMat" specular="0.9" shininess="0.5" reflectance="0" rgba="0.7 0.7 0.7 1" emission="0.1" />
         <material name="GriMat" specular="0.9" shininess="0.5" reflectance="0" rgba="0.1 0.1 0.1 1" emission="0.1" />
         <material name="BasketMat" specular="0" shininess="0" reflectance="0" rgba="0.26 0.16 0.16796875 1" emission="0" />
         <material name="Light" specular="0" shininess="0.6" reflectance="0.9" rgba="0.5 0.5 1 1" emission="0.7" />
+        
+        <mesh file="objects/big_bolt.stl" scale="0.005 0.005 0.005"/>
+        <mesh file="objects/big_nut.stl" scale="0.005 0.005 0.005"/>
     </asset>
     
    <worldbody>
-        <body pos="-0.16 0.90 0.02" euler="4.71238898 0 3.14159265">
+        <!--body pos="-0.16 0.90 0.02" euler="4.71238898 0 3.14159265">
             <body euler="0 -0.82 0">
                 <camera name="workbench_camera" euler="0.25 0 0" fovy="43" />
             </body>
@@ -50,14 +55,16 @@
             <body euler="-0.23 0 0">
                 <camera name="upper_camera" euler="0 0.09 0" fovy="41" />
             </body>
-        </body>
+        </body-->
 
+        <!-- Lighting and furniture -->
         <light pos="0 0 3" castshadow="true" directional="true" dir="0 0 -1" />
         <geom name="floor" pos="0 0 0" quat="0 0 0 1" size="5 5 1" type="plane" rgba="1 0.83 0.61 1" material="BasketMat" />
         <geom name="table" pos="0.8 0 0.4" size="1 0.5 0.4" type="box" rgba="1 0.83 0.61 1" material="BasketMat"/>
         <geom name="stand" pos="0 0 0.9" size="0.1 0.1 0.1" type="box" rgba="1 0.83 0.61 1" material="BasketMat"/>
 
-        <body name="base_link" pos="0 0 1" quat="0 0 0 1" >
+        <!-- UR5 and gripper -->
+        <body name="base_link" pos="0 0 1" quat="1 0 0 0" >
             <inertial pos="0 0 0" quat="0.5 0.5 -0.5 0.5" mass="4" diaginertia="0.0072 0.00443333 0.00443333" />
             <geom name="base_mesh" type="mesh" mesh="base" material="RobMat" />
             <geom name="base_cap" type="cylinder" pos="0 0 0.14" size="0.06 0.02" rgba="0.596 0.96 1 1" material="RobMat" contype="0" conaffinity="0" />
@@ -164,6 +171,10 @@
                 </body>
             </body>
         </body>
+        
+        <!-- Other scene objects -->
+        <geom name="bolt" pos="0.8 -0.2 0.875" quat="0 0 1 0" type="mesh" mesh="big_bolt" material="RobMat"/>
+        <geom name="nut" pos="0.8 0.2 0.8" type="mesh" mesh="big_nut" material="RobMat"/>
 
    </worldbody>
 
