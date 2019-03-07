@@ -267,6 +267,7 @@ int main(int argc, char **argv)
   std::vector<int> grip_bodies_(n_grip_bodies_), grip_geoms_(n_grip_bodies_);
   for(int i=0; i<n_grip_bodies_; i++)
   {
+    // bodies for welding, geoms for collision checking
     grip_bodies_[i] = mj_name2id(m, mjOBJ_BODY, grip_body_names_[i].c_str());
     grip_geoms_[i] = mj_name2id(m, mjOBJ_GEOM, (grip_body_names_[i]+std::string("_geom")).c_str());
   }
@@ -352,8 +353,8 @@ int main(int argc, char **argv)
           m->eq_obj2id[grip_weldI_] = grip_bodies_[gripI_];
           m->eq_active[grip_weldI_] = true;
           // lock gripper
-          d->ctrl[gripper_mI_ofs+0] = d->ctrl[gripper_mI_ofs+1] = 0.0;
-          m->eq_active[lfinger_eqI_] = m->eq_active[rfinger_eqI_] = true;
+//          d->ctrl[gripper_mI_ofs+0] = d->ctrl[gripper_mI_ofs+1] = 0.0;
+//          m->eq_active[lfinger_eqI_] = m->eq_active[rfinger_eqI_] = true;
         }
       }
     }
