@@ -3,12 +3,14 @@
   <group ns="mujoco">
       <rosparam>
         key: /home/james/code/packages/mujoco200_linux/bin/mjkey.txt
-        xml: /home/james/catkin_ws/src/mujoco_ros/mujoco_files/ur5.xml
-        start_time: 5.0
+        xml: /home/james/catkin_ws/src/robots/mujoco_ros/mujoco_files/ur5_threaded_manip.xml
+        start_time: 0.0
         FPS: 60
+        
+        grabbable_bodies: [ "nut" ]
       </rosparam>
       
-      <node name="mujoco_ur5" pkg="mujoco_ros" type="mujoco_ur5" output="screen"/>
+      <node name="mujoco_ur5" pkg="mujoco_ros" type="mujoco_ur5" output="screen" required="true"/>
   </group>
   
   <include file="$(find james_ur_kinematics)/launch/ur_kinematics_mujoco.launch"/>

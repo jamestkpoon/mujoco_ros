@@ -2,6 +2,7 @@
 #include "ros/ros.h"
 #include "std_msgs/Float32MultiArray.h"
 #include "std_msgs/Bool.h"
+#include "tf/transform_datatypes.h"
 // MuJoCo
 #include "mujoco.h"
 #include "glfw3.h"
@@ -11,10 +12,8 @@
 #include <RMLPositionInputParameters.h>
 #include <RMLPositionOutputParameters.h>
 
-// UR5 joint offsets
-//const double UR5_joint_offsets[6] = { 0.0, M_PI, 0.0, M_PI, 0.0, 0.0 };
+//// Reflexxes for UR5 control
 
-// Reflexxes for UR5 control
 const int UR5_DOF = 6;
 const double UR5_maxVel =  180 * (M_PI/180),
   UR5_maxAccel = 40 * (M_PI/180), UR5_maxJerk = 80 * (M_PI/180); // from v-rep
@@ -24,7 +23,10 @@ int UR5_traj_step, UR5_traj_steps; bool UR5_traj_in = false;
 const double gripper_torque = 1.0, gripper_driver_min_pos = 0.05;
 bool gripper_in = false, gripper_state = false;
 
-// MuJoCo/GLFW
+////
+
+//// MuJoCo/GLFW
+
 mjModel* m = NULL;                  // MuJoCo model
 mjData* d = NULL;                   // MuJoCo data
 mjvCamera cam;                      // abstract camera
@@ -88,7 +90,9 @@ void scroll(GLFWwindow* window, double xoffset, double yoffset)
     mjv_moveCamera(m, mjMOUSE_ZOOM, 0, -0.05*yoffset, &scn, &cam);
 }
 
-// ROS callbacks
+////
+
+//// ROS callbacks
 
 void jpos_cb(const std_msgs::Float32MultiArray& msg)
 {
@@ -101,7 +105,7 @@ void jpos_cb(const std_msgs::Float32MultiArray& msg)
     for(int i=0; i<nsteps_; i++)
     {
       std::vector<double> d_(UR5_DOF);
-      for(int j=0; j<UR5_DOF; j++) d_[j] = msg.data[i_++];// - UR5_joint_offsets[j];
+      for(int j=0; j<UR5_DOF; j++) d_[j] = msg.data[i_++];
       UR5_jpos.push_back(d_);
     }
     
@@ -125,6 +129,52 @@ void gripper_cb(const std_msgs::Bool& msg)
 {
   gripper_in = msg.data;
 }
+
+////
+
+//// helper fns
+
+bool checkGrip(const int& lgI, const int& rgI, const int& targetI)
+{
+  bool lcon_ = false, rcon_ = false;
+  for(int i=0; i<d->ncon; i++)
+  {
+    if(!lcon_ && (d->contact[i].geom1 == lgI || d->contact[i].geom2 == lgI))
+      lcon_ = (d->contact[i].geom1 == targetI || d->contact[i].geom2 == targetI);
+    if(!rcon_ && (d->contact[i].geom1 == rgI || d->contact[i].geom2 == rgI))
+      rcon_ = (d->contact[i].geom1 == targetI || d->contact[i].geom2 == targetI);
+  }
+  
+  return (lcon_ && rcon_);
+}
+
+int checkGrips(const int& lgI, const int& rgI, const std::vector<int>& geoms)
+{
+  for(int i=0; i<(int)geoms.size(); i++)
+    if(checkGrip(lgI,rgI, geoms[i])) return i;
+    
+  return -1;
+}
+
+void set_grip_weld_relpose(const int& grip_weldI, const int& targetI)
+{
+  int eeI_ = m->eq_obj1id[grip_weldI]; tf::Transform ee_tf_, target_tf_;
+  ee_tf_.setOrigin(tf::Vector3(d->xpos[eeI_*3+0],d->xpos[eeI_*3+1],d->xpos[eeI_*3+2]));
+  ee_tf_.setRotation(tf::Quaternion(d->xquat[eeI_*4+1],d->xquat[eeI_*4+2],d->xquat[eeI_*4+3],d->xquat[eeI_*4+0]));
+  target_tf_.setOrigin(tf::Vector3(d->xpos[targetI*3+0],d->xpos[targetI*3+1],d->xpos[targetI*3+2]));
+  target_tf_.setRotation(tf::Quaternion(d->xquat[targetI*4+1],d->xquat[targetI*4+2],d->xquat[targetI*4+3],d->xquat[targetI*4+0]));
+  
+  tf::Transform relpose_ = ee_tf_.inverse() * target_tf_;
+  m->eq_data[7*grip_weldI+0] = relpose_.getOrigin()[0];
+  m->eq_data[7*grip_weldI+1] = relpose_.getOrigin()[1];
+  m->eq_data[7*grip_weldI+2] = relpose_.getOrigin()[2];
+  m->eq_data[7*grip_weldI+3] = relpose_.getRotation()[3];
+  m->eq_data[7*grip_weldI+4] = relpose_.getRotation()[0];
+  m->eq_data[7*grip_weldI+5] = relpose_.getRotation()[1];
+  m->eq_data[7*grip_weldI+6] = relpose_.getRotation()[2];
+}
+
+////
 
 int main(int argc, char **argv)
 {
@@ -170,42 +220,64 @@ int main(int argc, char **argv)
   glfwSetMouseButtonCallback(window, mouse_button);
   glfwSetScrollCallback(window, scroll);
   
-  // useful indexing
-  int UR5_jI_ofs = mj_name2id(m, mjOBJ_JOINT, "joint1"), // UR5 joints
-    gripper_mI_ofs = mj_name2id(m, mjOBJ_ACTUATOR, "close_1"), // gripper motors
-    gri_l_jI = mj_name2id(m, mjOBJ_JOINT, "joint7_2"), // gripper drive hinges
-    gri_r_jI = mj_name2id(m, mjOBJ_JOINT, "joint7_1");
-    
   // "settle" the simulation by starting at a certain timestamp
   double settle_time_; nh_.getParam("start_time", settle_time_);
   while(d->time < settle_time_) mj_step(m, d);
   
-  ////
+  // other stuff
+  int fps_; nh_.getParam("FPS", fps_); double FPS_period = 1.0 / fps_;
+  
+  int UR5_jI_ofs = mj_name2id(m, mjOBJ_JOINT, "joint1"), // UR5 joints
+    gripper_mI_ofs = mj_name2id(m, mjOBJ_ACTUATOR, "close_1"), // gripper motors
+    gri_l_jI = mj_name2id(m, mjOBJ_JOINT, "joint7_2"), // gripper drive hinges
+    gri_r_jI = mj_name2id(m, mjOBJ_JOINT, "joint7_1"),
+    gri_l_gI = mj_name2id(m, mjOBJ_GEOM, "left_follower_mesh"), // gripper finger geoms
+    gri_r_gI = mj_name2id(m, mjOBJ_GEOM, "right_follower_mesh"),
+    lfinger_eqI_ = mj_name2id(m, mjOBJ_EQUALITY, "lfinger_lock"), // gripper finger welds
+    rfinger_eqI_ = mj_name2id(m, mjOBJ_EQUALITY, "rfinger_lock");
   
   //// Reflexxes stuff
+  
   ReflexxesAPI *rml_api_ = NULL;
-  RMLPositionInputParameters  *rml_args_i_ = new RMLPositionInputParameters(UR5_DOF);
-  RMLPositionOutputParameters *rml_args_o_ = new RMLPositionOutputParameters(UR5_DOF);
+  RMLPositionInputParameters  *rml_i_ = new RMLPositionInputParameters(UR5_DOF);
+  RMLPositionOutputParameters *rml_o_ = new RMLPositionOutputParameters(UR5_DOF);
   RMLPositionFlags rml_flags_;
   
   for(int i=0; i<UR5_DOF; i++)
   {
-    rml_args_i_->CurrentPositionVector->VecData[i] = d->qpos[i+UR5_jI_ofs];
-    rml_args_i_->CurrentVelocityVector->VecData[i] = d->qvel[i+UR5_jI_ofs];
-    rml_args_i_->CurrentAccelerationVector->VecData[i] = 0.0;
+    rml_i_->CurrentPositionVector->VecData[i] = d->qpos[i+UR5_jI_ofs];
+    rml_i_->CurrentVelocityVector->VecData[i] = d->qvel[i+UR5_jI_ofs];
+    rml_i_->CurrentAccelerationVector->VecData[i] = 0.0;
             
-    rml_args_i_->MaxVelocityVector->VecData[i] = UR5_maxVel;
-    rml_args_i_->MaxAccelerationVector->VecData[i] = UR5_maxAccel;
-    rml_args_i_->MaxJerkVector->VecData[i] = UR5_maxJerk;
+    rml_i_->MaxVelocityVector->VecData[i] = UR5_maxVel;
+    rml_i_->MaxAccelerationVector->VecData[i] = UR5_maxAccel;
+    rml_i_->MaxJerkVector->VecData[i] = UR5_maxJerk;
     
-    rml_args_i_->SelectionVector->VecData[i] = true;
+    rml_i_->SelectionVector->VecData[i] = true;
   }
   
-  ////
+  ur_nh_.setParam("moving", false);
 
   //// main loop
   
-  int fps_; nh_.getParam("FPS", fps_); double FPS_period = 1.0 / fps_;
+  // gripper init
+  std::vector<std::string> grip_body_names_; nh_.getParam("grabbable_bodies", grip_body_names_);
+  int n_grip_bodies_ = (int)grip_body_names_.size(),
+    grip_weldI_ = mj_name2id(m, mjOBJ_EQUALITY, "grip_"), gripI_ = -1;
+  std::vector<int> grip_bodies_(n_grip_bodies_), grip_geoms_(n_grip_bodies_);
+  for(int i=0; i<n_grip_bodies_; i++)
+  {
+    grip_bodies_[i] = mj_name2id(m, mjOBJ_BODY, grip_body_names_[i].c_str());
+    grip_geoms_[i] = mj_name2id(m, mjOBJ_GEOM, (grip_body_names_[i]+std::string("_geom")).c_str());
+  }
+
+  m->eq_active[lfinger_eqI_] = m->eq_active[rfinger_eqI_] = true; // start locked
+  
+  // UR5 init
+  std_msgs::Float32MultiArray initial_joint_pose_;
+  initial_joint_pose_.data = std::vector<float>(UR5_DOF, 0.0);
+  initial_joint_pose_.data[1] = -M_PI/2;
+  jpos_cb(initial_joint_pose_);
   
   while(!glfwWindowShouldClose(window) && ros::ok())
   {
@@ -222,17 +294,17 @@ int main(int argc, char **argv)
         // set target position and velocity
         for(int i=0; i<UR5_DOF; i++)
         {          
-          rml_args_i_->TargetPositionVector->VecData[i] = UR5_jpos[UR5_traj_step][i];
-          rml_args_i_->TargetVelocityVector->VecData[i] = UR5_jvel[UR5_traj_step][i];
+          rml_i_->TargetPositionVector->VecData[i] = UR5_jpos[UR5_traj_step][i];
+          rml_i_->TargetVelocityVector->VecData[i] = UR5_jvel[UR5_traj_step][i];
         }
       }
       else // continue motion
       {
         // update
-        int rml_result_ = rml_api_->RMLPosition(*rml_args_i_,rml_args_o_, rml_flags_);
-        *rml_args_i_->CurrentPositionVector = *rml_args_o_->NewPositionVector;
-        *rml_args_i_->CurrentVelocityVector = *rml_args_o_->NewVelocityVector;
-        *rml_args_i_->CurrentAccelerationVector = *rml_args_o_->NewAccelerationVector;
+        int rml_result_ = rml_api_->RMLPosition(*rml_i_,rml_o_, rml_flags_);
+        *rml_i_->CurrentPositionVector = *rml_o_->NewPositionVector;
+        *rml_i_->CurrentVelocityVector = *rml_o_->NewVelocityVector;
+        *rml_i_->CurrentAccelerationVector = *rml_o_->NewAccelerationVector;
         // check if finished
         if(rml_result_ == ReflexxesAPI::RML_FINAL_STATE_REACHED)
           { free(rml_api_); rml_api_ = NULL; UR5_traj_step++; }
@@ -240,28 +312,62 @@ int main(int argc, char **argv)
         // copy UR5 state to MuJoCo
         for(int i=0; i<UR5_DOF; i++)
         {
-          d->qpos[i+UR5_jI_ofs] = rml_args_o_->NewPositionVector->VecData[i];
-          d->qvel[i+UR5_jI_ofs] = rml_args_o_->NewVelocityVector->VecData[i];
+          d->qpos[i+UR5_jI_ofs] = rml_o_->NewPositionVector->VecData[i];
+          d->qvel[i+UR5_jI_ofs] = rml_o_->NewVelocityVector->VecData[i];
         }
       }
 
       if(UR5_traj_step == UR5_traj_steps)
         { ur_nh_.setParam("moving", false); UR5_traj_in = false; }
     }
+    else
+    {
+      // remember, no gravity
+      for(int i=0; i<UR5_DOF; i++)
+      {
+        d->qpos[i+UR5_jI_ofs] = UR5_jpos.back()[i];
+        d->qvel[i+UR5_jI_ofs] = 0.0;
+      }
+    }
     
     // gripper control
     if(gripper_state != gripper_in)
     {
-      if(gripper_in) // close gripper
-        d->ctrl[gripper_mI_ofs+0] = d->ctrl[gripper_mI_ofs+1] = gripper_torque;
-      else
-        d->ctrl[gripper_mI_ofs+0] = d->ctrl[gripper_mI_ofs+1] = -gripper_torque;
+      m->eq_active[lfinger_eqI_] = m->eq_active[rfinger_eqI_] = false;
+      if(gripper_in) d->ctrl[gripper_mI_ofs+0] = d->ctrl[gripper_mI_ofs+1] = gripper_torque; // close
+      else d->ctrl[gripper_mI_ofs+0] = d->ctrl[gripper_mI_ofs+1] = -gripper_torque; // open
         
       gripper_state = gripper_in;
     }
     
-    if(!gripper_state && std::min(d->qpos[gri_l_jI], d->qpos[gri_r_jI]) < gripper_driver_min_pos)
-      d->ctrl[gripper_mI_ofs+0] = d->ctrl[gripper_mI_ofs+1] = 0.0;
+    if(gripper_state)
+    {
+      if(gripI_ == -1)
+      {
+        gripI_ = checkGrips(gri_l_gI,gri_r_gI, grip_geoms_);
+        if(gripI_ != -1)
+        {
+          // set grip weld
+          set_grip_weld_relpose(grip_weldI_, grip_bodies_[gripI_]);
+          m->eq_obj2id[grip_weldI_] = grip_bodies_[gripI_];
+          m->eq_active[grip_weldI_] = true;
+          // lock gripper
+          d->ctrl[gripper_mI_ofs+0] = d->ctrl[gripper_mI_ofs+1] = 0.0;
+          m->eq_active[lfinger_eqI_] = m->eq_active[rfinger_eqI_] = true;
+        }
+      }
+    }
+    else
+    {
+      if(gripI_ != -1)
+        { m->eq_active[grip_weldI_] = false; gripI_ = -1; }
+        
+      if(std::min(d->qpos[gri_l_jI], d->qpos[gri_r_jI]) <= gripper_driver_min_pos)
+      {
+        d->ctrl[gripper_mI_ofs+0] = d->ctrl[gripper_mI_ofs+1] = 0.0;
+        m->eq_active[lfinger_eqI_] = m->eq_active[rfinger_eqI_] = true;
+      }
+    }
       
     // update MuJoCo
     mjtNum simstart = d->time;
@@ -278,6 +384,8 @@ int main(int argc, char **argv)
     // process pending GUI events, call GLFW callbacks
     glfwPollEvents();
   }
+  
+  ////
   
   //// MuJoCo cleanup
 
@@ -298,7 +406,7 @@ int main(int argc, char **argv)
   
   //// Reflexxes cleanup
   
-  delete rml_api_; delete rml_args_i_; delete rml_args_o_;
+  delete rml_api_; delete rml_i_; delete rml_o_;
   
   ////
   
