@@ -333,7 +333,7 @@ int MujocoNode::run()
     if(ext_cam) // publish RGB
     {
       // render RGB buffer off-screen
-      cam.fixedcamid = 0; cam.type = mjCAMERA_FIXED;
+      cam.fixedcamid = ext_camI; cam.type = mjCAMERA_FIXED;
       mjr_setBuffer(mjFB_OFFSCREEN, &con);
       mjv_updateScene(m, d, &opt, NULL, &cam, mjCAT_ALL, &scn);
       mjr_render(viewport, &scn, &con);
@@ -350,6 +350,7 @@ int MujocoNode::run()
       rgb_msg_.data = std::vector<unsigned char>(rgb_buf_, rgb_buf_+rgb_buflen_);
       rgb_pub_.publish(rgb_msg_);
       
+      // restore rendering to onscreen abstract camera
       cam.fixedcamid = -1; cam.type = mjCAMERA_FREE;
       mjr_setBuffer(mjFB_WINDOW, &con);
     }
