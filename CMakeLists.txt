@@ -134,16 +134,14 @@ catkin_package(
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
 include_directories(
-# include
+  include
   ${catkin_INCLUDE_DIRS}
   ${mujoco200_include_dir}
   ${reflexxesII_include_dir}
 )
 
 ## Declare a C++ library
-# add_library(${PROJECT_NAME}
-#   src/${PROJECT_NAME}/mujoco_ros.cpp
-# )
+# add_library(mujoco_node src/mujoco_node.cpp)
 
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries
@@ -154,7 +152,7 @@ include_directories(
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
  #add_executable(mujoco_test src/mujoco_test.cpp)
- add_executable(mujoco_ur5 src/mujoco_ur5.cpp)
+ add_executable(mujoco_node src/mujoco_node.cpp)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -165,11 +163,11 @@ include_directories(
 ## Add cmake target dependencies of the executable
 ## same as for the library above
  #add_dependencies(mujoco_test ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
- add_dependencies(mujoco_ur5 ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+ add_dependencies(mujoco_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
  #target_link_libraries(mujoco_test ${catkin_LIBRARIES} ${mujoco200_link})
- target_link_libraries(mujoco_ur5 ${catkin_LIBRARIES} ${mujoco200_link} ${reflexxesII_lib})
+ target_link_libraries(mujoco_node ${catkin_LIBRARIES} ${mujoco200_link} ${reflexxesII_lib})
 
 #############
 ## Install ##

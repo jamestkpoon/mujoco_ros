@@ -42,12 +42,11 @@
 
         <!-- Lighting and furniture -->
         <light pos="1 0 3" castshadow="true" directional="true" dir="0 0 -1" />
-        <geom name="floor" pos="0 0 0" quat="0 0 0 1" size="5 5 1" type="plane" rgba="1 0.83 0.61 1" material="floor_mat" />
-        <geom name="table" pos="0.8 0 0.4" size="1 0.5 0.4" type="box" material="bench_mat"/>
-        <geom name="stand" pos="0 0 0.9" size="0.1 0.1 0.1" type="box" material="bench_mat"/>
+        <geom name="floor" pos="2 0 -1" quat="0 0 0 1" size="5 5 1" type="plane" rgba="1 0.83 0.61 1" material="floor_mat" />
+        <geom name="table" pos="0.4 0 -0.5" size="0.6 0.5 0.5" type="box" material="bench_mat"/>
 
         <!-- UR5 and gripper -->
-        <body name="base_link" pos="0 0 1" quat="1 0 0 0" >
+        <body name="base_link" pos="0 0 0" quat="1 0 0 0" >
             <inertial pos="0 0 0" quat="0.5 0.5 -0.5 0.5" mass="4" diaginertia="0.0072 0.00443333 0.00443333" />
             <geom name="base_mesh" type="mesh" mesh="base" material="RobMat" />
             <geom name="base_cap" type="cylinder" pos="0 0 0.14" size="0.06 0.02" rgba="0.596 0.96 1 1" material="RobMat" contype="0" conaffinity="0" />
@@ -173,7 +172,7 @@
     <equality>
         <weld name="lfinger_lock" body1="ee_link" body2="left_follower_link" active="false"/>
         <weld name="rfinger_lock" body1="ee_link" body2="right_follower_link" active="false"/>
-        <weld name="grip_" body1="ee_link" active="false" relpose="1 2 3 1 0 0 0" />
+        <weld name="grip_" body1="ee_link" active="false"/>
     </equality>
     
     <sensor>
