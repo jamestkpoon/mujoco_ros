@@ -7,10 +7,11 @@
         start_time: 0.0
         FPS: 60
         
-        grabbable_bodies: [ "nut" ]
+        grippable_bodies: [ "nut" ]
+        ext_cam_name: "ros_cam"
       </rosparam>
       
-      <node name="mujoco_ur5" pkg="mujoco_ros" type="mujoco_ur5" output="screen" required="true"/>
+      <node name="mujoco_sim_node" pkg="mujoco_ros" type="mujoco_node" output="screen" required="true"/>
   </group>
   
   <include file="$(find james_ur_kinematics)/launch/ur_kinematics_mujoco.launch"/>

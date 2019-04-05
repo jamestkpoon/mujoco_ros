@@ -26,19 +26,22 @@
     </asset>
     
     <worldbody>
-        <body name="base" pos="0.6 -0.2 0.1">
+        <body name="base" pos="0.66 -0.2 0.1">
             <geom name="base_geom" size="0.075 0.045 0.0075" type="box" material="RobMat"/>
             <geom name="shaft_geom" pos="0.04 0 0.008" type="mesh" mesh="shaft_rot" material="RobMat" contype='0' conaffinity='0'/>
             <joint type="free"/>
 
-            <body name="nut" pos="0 0.4 0">
-                <geom name="nut_geom" type="mesh" mesh="nut" material="RobMat"/>
-                <joint name="nut_revolute" type="hinge" pos="0 0 0" axis="1 1 1" />
-                <joint name="nut_slide" type="slide" pos="0 0 0" axis="1 1 1" />
-            </body>
 
         </body>
         
+            <body name="nut" pos="0.7 0.2 0">
+                <geom name="nut_geom" type="mesh" mesh="nut" material="RobMat"/>
+                <joint type="free"/> <!-- n o o -->
+<!--                <joint name="nut_revolute" type="hinge" pos="0 0 0" axis="1 1 1" />-->
+<!--                <joint name="nut_slide" type="slide" pos="0 0 0" axis="1 1 1" />-->
+            </body>
+
+
         <body pos="2 0 0.5" euler="0.0 1.5 -1.5708">
             <camera name="ros_cam" fovy="43.3" />
         </body>
