@@ -1,0 +1,7 @@
+string fastener_name
+string attach_name
+string axis
+float64 pitch
+bool attach_flag
+---
+bool ok

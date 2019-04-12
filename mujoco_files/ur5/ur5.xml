@@ -164,8 +164,8 @@
 
     <actuator>
         <!-- gripper driver torque control -->
-        <motor name="close_1" joint="joint7_1" gear="0.2 0 0 0 0 0" />
-        <motor name="close_2" joint="joint7_2" gear="0.2 0 0 0 0 0" />
+        <motor name="gripper_close_1" joint="joint7_1" gear="0.2 0 0 0 0 0" />
+        <motor name="gripper_close_2" joint="joint7_2" gear="0.2 0 0 0 0 0" />
 
     </actuator>
 
