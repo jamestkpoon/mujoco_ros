@@ -542,15 +542,15 @@ bool MujocoNode::threadlock_cb(mujoco_ros::ThreadLock::Request& req, mujoco_ros:
       tc_.tI.p = m->jnt_qposadr[jtI_]; tc_.tI.v = m->jnt_dofadr[jtI_];
       tc_.rI.p = m->jnt_qposadr[jrI_]; tc_.rI.v = m->jnt_dofadr[jrI_];
       threaded_connections.push_back(tc_);
+
+      // zero velocities and lock other joints
+      for(int i=0; i<4; i++)
+      {
+        d->qvel[m->jnt_dofadr[other_joint_indices_[i]]] = 0.0;
+        m->jnt_limited[other_joint_indices_[i]] = true;
+      }
     }
     else { res.ok = false; return true; }
-    
-    // zero joint velocities, lock
-    for(int i=0; i<4; i++)
-    {
-      d->qvel[m->jnt_dofadr[other_joint_indices_[i]]] = 0.0;
-      m->jnt_limited[other_joint_indices_[i]] = true;
-    }
   }
   else
   {
