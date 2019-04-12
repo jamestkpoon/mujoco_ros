@@ -268,7 +268,7 @@ void MujocoNode::reset_mujoco()
   size_t n_grip_bodies_ = grip_body_names_.size();
   grippedI = -1; grip_weldI = mj_name2id(m, mjOBJ_EQUALITY, "grip_");
   grippable_bI.resize(n_grip_bodies_); grippable_gI.resize(n_grip_bodies_);
-  for(int i=0; i<n_grip_bodies_; i++)
+  for(size_t i=0; i<n_grip_bodies_; i++)
   {
     // bodies for welding, geoms for collision checking
     grippable_bI[i] = mj_name2id(m, mjOBJ_BODY, grip_body_names_[i].c_str());
