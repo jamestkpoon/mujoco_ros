@@ -26,6 +26,10 @@
     </asset>
     
     <worldbody>
+        <body pos="2 0 0.5" euler="0.0 -0.1 3.1416"> <!-- seems to need *= -1 ? -->
+            <camera name="ros_cam" euler="-1.5708 -1.5708 0" fovy="43.3" /> <!-- needs l/r flip -->
+        </body>
+
         <body name="base" pos="0.66 -0.2 0.1">
             <geom name="base_geom" size="0.075 0.045 0.0075" type="box" material="RobMat"/>
             <joint type="free"/>
@@ -43,12 +47,6 @@
                     <joint name="nut_rz" type="hinge" axis="0 0 1"/>
                 </body>
             </body>
-        </body>
-        
-
-
-        <body pos="2 0 0.5" euler="0.0 1.5 -1.5708">
-            <camera name="ros_cam" fovy="43.3" />
         </body>
      
     </worldbody>

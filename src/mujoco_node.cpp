@@ -13,7 +13,7 @@ MujocoNode::MujocoNode()
 
     // initialize GLFW
     glfwInit();
-    window = glfwCreateWindow(640, 480, "Mujoco_UR5", NULL, NULL);
+    window = glfwCreateWindow(GLFW_W, GLFW_H, "Mujoco_UR5", NULL, NULL);
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
 
@@ -40,7 +40,7 @@ MujocoNode::MujocoNode()
     {
       nh.getParam("ext_cam_name", ext_cam_name);
       ext_camI = mj_name2id(m, mjOBJ_CAMERA, ext_cam_name.c_str());
-      ext_cam_pub = ur_nh.advertise<sensor_msgs::Image>(ext_cam_name+"/rgb", 1);
+      ext_cam_pub = nh.advertise<sensor_msgs::Image>(ext_cam_name+"/rgb", 1);
     }
     
     
@@ -175,6 +175,59 @@ void MujocoNode::set_grip_weld_relpose(const int& target_bI)
   m->eq_data[7*grip_weldI+5] = relpose_.getRotation()[1];
   m->eq_data[7*grip_weldI+6] = relpose_.getRotation()[2];
 }
+
+
+
+//// streaming RGB camera
+
+void MujocoNode::fill_rgb_image_msg(sensor_msgs::Image& msg,
+  const unsigned char* buf, const int& buf_sz)
+{
+  // other data fields
+  msg.header.stamp = ros::Time::now();
+  msg.header.frame_id = ext_cam_name;
+  msg.encoding = "rgb8";
+  msg.width = GLFW_W; msg.height = GLFW_H;
+  msg.step = msg.width * GLFW_C;
+  
+  // copy
+//  msg.data = std::vector<unsigned char>(buf, buf+buf_sz);
+
+  // horizontal flip
+  msg.data.resize(buf_sz); int iI_ = 0;
+  for(int v=0; v<msg.height; v++)
+  {
+    int oI_ = (v+1)*msg.step - GLFW_C;
+    for(int u=0; u<msg.width; u++)
+    {
+      for(int c=0; c<GLFW_C; c++) msg.data[oI_++] = buf[iI_++];
+      oI_ -= 2*GLFW_C; // shift output index back to start of preceding element
+    }
+  }
+}
+
+void MujocoNode::stream_cam_rgb(mjrRect& viewport)
+{
+  // render RGB off-screen
+  cam.fixedcamid = ext_camI; cam.type = mjCAMERA_FIXED;
+  mjr_setBuffer(mjFB_OFFSCREEN, &con);
+  mjv_updateScene(m, d, &opt, NULL, &cam, mjCAT_ALL, &scn);
+  mjr_render(viewport, &scn, &con);
+  // read buffer
+  int rgb_buflen_ = GLFW_W*GLFW_H * GLFW_C;
+  unsigned char* rgb_buf_raw_ = (unsigned char*)malloc(rgb_buflen_);
+  mjr_readPixels(rgb_buf_raw_, NULL, viewport, &con);
+  
+  // publish
+  sensor_msgs::Image rgb_msg_;
+  fill_rgb_image_msg(rgb_msg_, rgb_buf_raw_,rgb_buflen_);
+  ext_cam_pub.publish(rgb_msg_);
+  
+  // restore rendering to onscreen abstract camera
+  cam.fixedcamid = -1; cam.type = mjCAMERA_FREE;
+  mjr_setBuffer(mjFB_WINDOW, &con);
+}
+
 
 
 
@@ -391,30 +444,7 @@ void MujocoNode::loop()
     mjrRect viewport = {0, 0, 0, 0};
     glfwGetFramebufferSize(window, &viewport.width, &viewport.height);
     
-    if(ext_cam) // publish RGB
-    {
-      // render RGB buffer off-screen
-      cam.fixedcamid = ext_camI; cam.type = mjCAMERA_FIXED;
-      mjr_setBuffer(mjFB_OFFSCREEN, &con);
-      mjv_updateScene(m, d, &opt, NULL, &cam, mjCAT_ALL, &scn);
-      mjr_render(viewport, &scn, &con);
-      int rgb_buflen_ = 3 * viewport.width*viewport.height;
-      unsigned char* rgb_buf_ = (unsigned char*)malloc(rgb_buflen_);
-      mjr_readPixels(rgb_buf_, NULL, viewport, &con);
-      // publish
-      sensor_msgs::Image rgb_msg_;
-      rgb_msg_.header.stamp = ros::Time::now();
-      rgb_msg_.header.frame_id = ext_cam_name;
-      rgb_msg_.encoding = "rgb8";
-      rgb_msg_.width = viewport.width; rgb_msg_.height = viewport.height;
-      rgb_msg_.is_bigendian = true; rgb_msg_.step = 3 * viewport.width;
-      rgb_msg_.data = std::vector<unsigned char>(rgb_buf_, rgb_buf_+rgb_buflen_);
-      ext_cam_pub.publish(rgb_msg_);
-      
-      // restore rendering to onscreen abstract camera
-      cam.fixedcamid = -1; cam.type = mjCAMERA_FREE;
-      mjr_setBuffer(mjFB_WINDOW, &con);
-    }
+    if(ext_cam) stream_cam_rgb(viewport); // publish RGB
     
     // update scene and render for viewport
     mjv_updateScene(m, d, &opt, NULL, &cam, mjCAT_ALL, &scn);

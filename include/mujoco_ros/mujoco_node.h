@@ -3,10 +3,6 @@
 
 
 
-# define UR5_DOF 6
-
-
-
 // ROS
 #include "ros/ros.h"
 #include "tf/transform_datatypes.h"
@@ -27,10 +23,18 @@
 #include <RMLPositionInputParameters.h>
 #include <RMLPositionOutputParameters.h>
 
-
-
 // threaded manip
 #include "mujoco_ros/ThreadLock.h"
+
+
+
+#define GLFW_W 640
+#define GLFW_H 480
+#define GLFW_C 3
+
+#define UR5_DOF 6
+
+
 
 struct JointIndex
 {
@@ -88,7 +92,7 @@ class MujocoNode
     
     
     
-    // Mujoco related
+    // Mujoco/GLFW
     GLFWwindow* window;
     double FPS_period;
     
@@ -117,8 +121,13 @@ class MujocoNode
     std::vector<int> grippable_bI, grippable_gI;
     
     // streaming RGB camera
+    void stream_cam_rgb(mjrRect& viewport);
+    void fill_rgb_image_msg(sensor_msgs::Image& msg, const unsigned char* buf, const int& buf_sz);
+  
     ros::Publisher ext_cam_pub;
-    bool ext_cam; std::string ext_cam_name; int ext_camI;
+    bool ext_cam; std::string ext_cam_name;
+    int ext_camI;
+    
 
 
     // threaded manip
