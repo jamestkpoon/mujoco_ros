@@ -33,6 +33,16 @@ MujocoNode::MujocoNode()
     
     reset_srv = nh.advertiseService("reset", &MujocoNode::reset_mujoco_cb, this);
     getpose_srv = nh.advertiseService("get_object_pose", &MujocoNode::getpose_cb, this);
+  
+    // stream camera data over ROS
+    ext_cam = nh.hasParam("ext_cam_name");
+    if(ext_cam)
+    {
+      nh.getParam("ext_cam_name", ext_cam_name);
+      ext_camI = mj_name2id(m, mjOBJ_CAMERA, ext_cam_name.c_str());
+      ext_cam_pub = ur_nh.advertise<sensor_msgs::Image>(ext_cam_name+"/rgb", 1);
+    }
+    
     
     
     // threaded manip
@@ -181,7 +191,7 @@ void MujocoNode::reset_mujoco()
   m = mj_loadXML(mujoco_xml_.c_str(), NULL, error, 1000);
   d = mj_makeData(m);
   
-  // useful indices for control
+  // UR5 indexing
   UR5_jI.resize(UR5_DOF);
   for(int i=0; i<UR5_DOF; i++)
   {
@@ -189,7 +199,9 @@ void MujocoNode::reset_mujoco()
     int i_ = mj_name2id(m, mjOBJ_JOINT, jn_.c_str());
     UR5_jI[i].p = m->jnt_qposadr[i_]; UR5_jI[i].v = m->jnt_dofadr[i_];
   }
-  gri_jI.resize(2); // gripper drive hinge position indices
+  
+  // gripper indexing
+  gri_jI.resize(2);
   gri_jI[0].p = m->jnt_qposadr[mj_name2id(m, mjOBJ_JOINT, "joint7_1")];
   gri_jI[1].p = m->jnt_qposadr[mj_name2id(m, mjOBJ_JOINT, "joint7_2")];
   gripper_m1I = mj_name2id(m, mjOBJ_ACTUATOR, "gripper_close_1"); // gripper motors
@@ -198,8 +210,20 @@ void MujocoNode::reset_mujoco()
   gri_r_gI = mj_name2id(m, mjOBJ_GEOM, "right_follower_mesh");
   lfinger_eqI = mj_name2id(m, mjOBJ_EQUALITY, "lfinger_lock"); // gripper finger welds
   rfinger_eqI = mj_name2id(m, mjOBJ_EQUALITY, "rfinger_lock");
-  
-  // UR5 init
+
+  std::vector<std::string> grip_body_names_; nh.getParam("grippable_bodies", grip_body_names_);
+  int n_grip_bodies_ = (int)grip_body_names_.size();
+  grippedI = -1; grip_weldI = mj_name2id(m, mjOBJ_EQUALITY, "grip_");
+  grippable_bI.resize(n_grip_bodies_); grippable_gI.resize(n_grip_bodies_);
+  for(int i=0; i<n_grip_bodies_; i++)
+  {
+    // bodies for welding, geoms for collision checking
+    grippable_bI[i] = mj_name2id(m, mjOBJ_BODY, grip_body_names_[i].c_str());
+    grippable_gI[i] = mj_name2id(m, mjOBJ_GEOM, (grip_body_names_[i]+"_geom").c_str());
+  }
+
+  // move UR5 to initial pose after locking gripper
+  m->eq_active[lfinger_eqI] = m->eq_active[rfinger_eqI] = true; // lock gripper
   std_msgs::Float32MultiArray initial_joint_pose_;
   initial_joint_pose_.data = std::vector<float>(UR5_DOF, 0.0);
   initial_joint_pose_.data[1] = -M_PI/2;
@@ -209,36 +233,11 @@ void MujocoNode::reset_mujoco()
     d->qvel[UR5_jI[i].v] = 0.0;
   }
   jpos_cb(initial_joint_pose_);
-  
-  
 
-  // gripper init
-  std::vector<std::string> grip_body_names_; nh.getParam("grippable_bodies", grip_body_names_);
-  int n_grip_bodies_ = (int)grip_body_names_.size();
-  grippedI = -1; grip_weldI = mj_name2id(m, mjOBJ_EQUALITY, "grip_");
-  grippable_bI.resize(n_grip_bodies_); grippable_gI.resize(n_grip_bodies_);
-  for(int i=0; i<n_grip_bodies_; i++)
-  {
-    // bodies for welding, geoms for collision checking
-    grippable_bI[i] = mj_name2id(m, mjOBJ_BODY, grip_body_names_[i].c_str());
-    grippable_gI[i] = mj_name2id(m, mjOBJ_GEOM, (grip_body_names_[i]+std::string("_geom")).c_str());
-  }
-
-  m->eq_active[lfinger_eqI] = m->eq_active[rfinger_eqI] = true; // start locked  
-
-  // "settle" the simulation by starting at a certain timestamp
+  // "settle" the simulation
   double settle_time_; nh.getParam("start_time", settle_time_);
   while(d->time < settle_time_) mj_step(m, d);
-  
-  // stream camera data over ROS
-  ext_cam = nh.hasParam("ext_cam_name");
-  if(ext_cam)
-  {
-    nh.getParam("ext_cam_name", ext_cam_name);
-    ext_camI = mj_name2id(m, mjOBJ_CAMERA, ext_cam_name.c_str());
-    ext_cam_pub = ur_nh.advertise<sensor_msgs::Image>(ext_cam_name+"/rgb", 1);
-  }
-  
+ 
 
 
   //// GLFW
