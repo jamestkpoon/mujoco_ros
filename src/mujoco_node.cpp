@@ -152,7 +152,7 @@ bool MujocoNode::checkGrip(const int& target_gI)
 
 int MujocoNode::checkGrips()
 {
-  for(int i=0; i<static_cast<int>(grippable_gI.size()); i++)
+  for(int i=0; i<(int)grippable_gI.size(); i++)
     if(checkGrip(grippable_gI[i])) return i;
     
   return -1;
@@ -265,7 +265,7 @@ void MujocoNode::reset_mujoco()
   rfinger_eqI = mj_name2id(m, mjOBJ_EQUALITY, "rfinger_lock");
 
   std::vector<std::string> grip_body_names_; nh.getParam("grippable_bodies", grip_body_names_);
-  int n_grip_bodies_ = (int)grip_body_names_.size();
+  size_t n_grip_bodies_ = grip_body_names_.size();
   grippedI = -1; grip_weldI = mj_name2id(m, mjOBJ_EQUALITY, "grip_");
   grippable_bI.resize(n_grip_bodies_); grippable_gI.resize(n_grip_bodies_);
   for(int i=0; i<n_grip_bodies_; i++)
@@ -378,7 +378,6 @@ void MujocoNode::loop()
         // copy UR5 state to MuJoCo
         for(int i=0; i<UR5_DOF; i++)
         {
-
           d->qpos[UR5_jI[i].p] = rml_o->NewPositionVector->VecData[i];
           d->qvel[UR5_jI[i].v] = rml_o->NewVelocityVector->VecData[i];
         }
@@ -584,7 +583,7 @@ bool MujocoNode::threadlock_cb(mujoco_ros::ThreadLock::Request& req, mujoco_ros:
   else
   {
     // remove threaded connection
-    for(int i=0; i<static_cast<int>(threaded_connections.size()); i++)
+    for(size_t i=0; i<threaded_connections.size(); i++)
       if(threaded_connections[i].fastener_name == req.fastener_name)
         { threaded_connections.erase(threaded_connections.begin()+i); break; }
     
