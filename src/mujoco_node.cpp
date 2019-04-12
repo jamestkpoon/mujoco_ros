@@ -18,22 +18,25 @@ MujocoNode::MujocoNode()
     glfwSwapInterval(1);
 
     // activate MuJoCo, initialize
-    std::string mujoco_key_; nh_.getParam("key", mujoco_key_);
+    std::string mujoco_key_; nh.getParam("key", mujoco_key_);
     mj_activate(mujoco_key_.c_str());
     reset_mujoco();
     
-    int fps_; nh_.getParam("FPS", fps_); FPS_period = 1.0 / fps_;
+    int fps_; nh.getParam("FPS", fps_); FPS_period = 1.0 / fps_;
       
       
 
     // ROS comms  
-    ur_nh_ = ros::NodeHandle("ur5");
-    jpos_sub_ = ur_nh_.subscribe("command/joint_positions", 1, &MujocoNode::jpos_cb, this);
-    gri_sub_ = ur_nh_.subscribe("command/gripper", 1, &MujocoNode::gripper_cb, this);
+    ur_nh = ros::NodeHandle("ur5");
+    jpos_sub = ur_nh.subscribe("command/joint_positions", 1, &MujocoNode::jpos_cb, this);
+    gri_sub = ur_nh.subscribe("command/gripper", 1, &MujocoNode::gripper_cb, this);
     
-    reset_srv_ = nh_.advertiseService("reset", &MujocoNode::reset_mujoco_cb, this);
-    getpose_srv_ = nh_.advertiseService("get_object_pose", &MujocoNode::getpose_cb, this);
-    threadlock_srv_ = nh_.advertiseService("thread_lock", &MujocoNode::threadlock_cb, this);
+    reset_srv = nh.advertiseService("reset", &MujocoNode::reset_mujoco_cb, this);
+    getpose_srv = nh.advertiseService("get_object_pose", &MujocoNode::getpose_cb, this);
+    
+    
+    // threaded manip
+    threadlock_srv = nh.advertiseService("thread_lock", &MujocoNode::threadlock_cb, this);
 }
 
 
@@ -123,35 +126,35 @@ bool MujocoNode::getpose_cb(mujoco_ros::GetPose::Request& req, mujoco_ros::GetPo
 
 //// gripper functions
 
-bool MujocoNode::checkGrip(const int& lgI, const int& rgI, const int& targetI)
+bool MujocoNode::checkGrip(const int& target_gI)
 {
   bool lcon_ = false, rcon_ = false;
   for(int i=0; i<d->ncon; i++)
   {
-    if(!lcon_ && (d->contact[i].geom1 == lgI || d->contact[i].geom2 == lgI))
-      lcon_ = (d->contact[i].geom1 == targetI || d->contact[i].geom2 == targetI);
-    if(!rcon_ && (d->contact[i].geom1 == rgI || d->contact[i].geom2 == rgI))
-      rcon_ = (d->contact[i].geom1 == targetI || d->contact[i].geom2 == targetI);
+    if(!lcon_ && (d->contact[i].geom1 == gri_l_gI || d->contact[i].geom2 == gri_l_gI))
+      lcon_ = (d->contact[i].geom1 == target_gI || d->contact[i].geom2 == target_gI);
+    if(!rcon_ && (d->contact[i].geom1 == gri_r_gI || d->contact[i].geom2 == gri_r_gI))
+      rcon_ = (d->contact[i].geom1 == target_gI || d->contact[i].geom2 == target_gI);
   }
   
   return (lcon_ && rcon_);
 }
 
-int MujocoNode::checkGrips(const int& lgI, const int& rgI, const std::vector<int>& grippable_geomsI)
+int MujocoNode::checkGrips()
 {
-  for(int i=0; i<(int)grippable_geomsI.size(); i++)
-    if(checkGrip(lgI,rgI, grippable_geomsI[i])) return i;
+  for(int i=0; i<static_cast<int>(grippable_gI.size()); i++)
+    if(checkGrip(grippable_gI[i])) return i;
     
   return -1;
 }
 
-void MujocoNode::set_grip_weld_relpose(const int& grip_weldI, const int& targetI)
+void MujocoNode::set_grip_weld_relpose(const int& target_bI)
 {
   tf::Transform ee_tf_, target_tf_; int eeI_ = m->eq_obj1id[grip_weldI];
   ee_tf_.setOrigin(tf::Vector3(d->xpos[eeI_*3+0], d->xpos[eeI_*3+1], d->xpos[eeI_*3+2]));
   ee_tf_.setRotation(tf::Quaternion(d->xquat[eeI_*4+1], d->xquat[eeI_*4+2], d->xquat[eeI_*4+3], d->xquat[eeI_*4+0]));
-  target_tf_.setOrigin(tf::Vector3(d->xpos[targetI*3+0], d->xpos[targetI*3+1], d->xpos[targetI*3+2]));
-  target_tf_.setRotation(tf::Quaternion(d->xquat[targetI*4+1], d->xquat[targetI*4+2], d->xquat[targetI*4+3], d->xquat[targetI*4+0]));
+  target_tf_.setOrigin(tf::Vector3(d->xpos[target_bI*3+0], d->xpos[target_bI*3+1], d->xpos[target_bI*3+2]));
+  target_tf_.setRotation(tf::Quaternion(d->xquat[target_bI*4+1], d->xquat[target_bI*4+2], d->xquat[target_bI*4+3], d->xquat[target_bI*4+0]));
   
   tf::Transform relpose_ = ee_tf_.inverse() * target_tf_;
   m->eq_data[7*grip_weldI+0] = relpose_.getOrigin()[0];
@@ -173,7 +176,7 @@ void MujocoNode::reset_mujoco()
   
   // load model  
   m = NULL; d = NULL;
-  std::string mujoco_xml_; nh_.getParam("xml", mujoco_xml_);
+  std::string mujoco_xml_; nh.getParam("xml", mujoco_xml_);
   char error[1000];
   m = mj_loadXML(mujoco_xml_.c_str(), NULL, error, 1000);
   d = mj_makeData(m);
@@ -193,8 +196,8 @@ void MujocoNode::reset_mujoco()
   gripper_m2I = mj_name2id(m, mjOBJ_ACTUATOR, "gripper_close_2");
   gri_l_gI = mj_name2id(m, mjOBJ_GEOM, "left_follower_mesh"); // gripper finger geoms
   gri_r_gI = mj_name2id(m, mjOBJ_GEOM, "right_follower_mesh");
-  lfinger_eqI_ = mj_name2id(m, mjOBJ_EQUALITY, "lfinger_lock"); // gripper finger welds
-  rfinger_eqI_ = mj_name2id(m, mjOBJ_EQUALITY, "rfinger_lock");
+  lfinger_eqI = mj_name2id(m, mjOBJ_EQUALITY, "lfinger_lock"); // gripper finger welds
+  rfinger_eqI = mj_name2id(m, mjOBJ_EQUALITY, "rfinger_lock");
   
   // UR5 init
   std_msgs::Float32MultiArray initial_joint_pose_;
@@ -210,30 +213,30 @@ void MujocoNode::reset_mujoco()
   
 
   // gripper init
-  std::vector<std::string> grip_body_names_; nh_.getParam("grippable_bodies", grip_body_names_);
+  std::vector<std::string> grip_body_names_; nh.getParam("grippable_bodies", grip_body_names_);
   int n_grip_bodies_ = (int)grip_body_names_.size();
-  gripI_ = -1; grip_weldI_ = mj_name2id(m, mjOBJ_EQUALITY, "grip_");
-  grip_bodies_.resize(n_grip_bodies_); grip_geoms_.resize(n_grip_bodies_);
+  grippedI = -1; grip_weldI = mj_name2id(m, mjOBJ_EQUALITY, "grip_");
+  grippable_bI.resize(n_grip_bodies_); grippable_gI.resize(n_grip_bodies_);
   for(int i=0; i<n_grip_bodies_; i++)
   {
     // bodies for welding, geoms for collision checking
-    grip_bodies_[i] = mj_name2id(m, mjOBJ_BODY, grip_body_names_[i].c_str());
-    grip_geoms_[i] = mj_name2id(m, mjOBJ_GEOM, (grip_body_names_[i]+std::string("_geom")).c_str());
+    grippable_bI[i] = mj_name2id(m, mjOBJ_BODY, grip_body_names_[i].c_str());
+    grippable_gI[i] = mj_name2id(m, mjOBJ_GEOM, (grip_body_names_[i]+std::string("_geom")).c_str());
   }
 
-  m->eq_active[lfinger_eqI_] = m->eq_active[rfinger_eqI_] = true; // start locked  
+  m->eq_active[lfinger_eqI] = m->eq_active[rfinger_eqI] = true; // start locked  
 
   // "settle" the simulation by starting at a certain timestamp
-  double settle_time_; nh_.getParam("start_time", settle_time_);
+  double settle_time_; nh.getParam("start_time", settle_time_);
   while(d->time < settle_time_) mj_step(m, d);
   
-  // RGB over ROS
-  ext_cam = nh_.hasParam("ext_cam_name");
+  // stream camera data over ROS
+  ext_cam = nh.hasParam("ext_cam_name");
   if(ext_cam)
   {
-    std::string ext_cam_name; nh_.getParam("ext_cam_name", ext_cam_name);
+    nh.getParam("ext_cam_name", ext_cam_name);
     ext_camI = mj_name2id(m, mjOBJ_CAMERA, ext_cam_name.c_str());
-    rgb_pub_ = ur_nh_.advertise<sensor_msgs::Image>(ext_cam_name+"/rgb", 1);
+    ext_cam_pub = ur_nh.advertise<sensor_msgs::Image>(ext_cam_name+"/rgb", 1);
   }
   
 
@@ -263,24 +266,24 @@ void MujocoNode::reset_mujoco()
   
   //// Reflexxes
   
-  rml_api_ = NULL;
-  rml_i_ = new RMLPositionInputParameters(UR5_DOF);
-  rml_o_ = new RMLPositionOutputParameters(UR5_DOF);
+  rml_api = NULL;
+  rml_i = new RMLPositionInputParameters(UR5_DOF);
+  rml_o = new RMLPositionOutputParameters(UR5_DOF);
   
   for(int i=0; i<UR5_DOF; i++)
   {
-    rml_i_->CurrentPositionVector->VecData[i] = d->qpos[UR5_jI[i].p];
-    rml_i_->CurrentVelocityVector->VecData[i] = d->qvel[UR5_jI[i].v];
-    rml_i_->CurrentAccelerationVector->VecData[i] = 0.0;
+    rml_i->CurrentPositionVector->VecData[i] = d->qpos[UR5_jI[i].p];
+    rml_i->CurrentVelocityVector->VecData[i] = d->qvel[UR5_jI[i].v];
+    rml_i->CurrentAccelerationVector->VecData[i] = 0.0;
             
-    rml_i_->MaxVelocityVector->VecData[i] = UR5_maxVel;
-    rml_i_->MaxAccelerationVector->VecData[i] = UR5_maxAccel;
-    rml_i_->MaxJerkVector->VecData[i] = UR5_maxJerk;
+    rml_i->MaxVelocityVector->VecData[i] = UR5_maxVel;
+    rml_i->MaxAccelerationVector->VecData[i] = UR5_maxAccel;
+    rml_i->MaxJerkVector->VecData[i] = UR5_maxJerk;
     
-    rml_i_->SelectionVector->VecData[i] = true;
+    rml_i->SelectionVector->VecData[i] = true;
   }
   
-  ur_nh_.setParam("moving", false);
+  ur_nh.setParam("moving", false);
   
   
   
@@ -298,39 +301,39 @@ void MujocoNode::loop()
     // UR5 joint control
     if(UR5_traj_in)
     {
-      if(rml_api_ == NULL) // start new motion
+      if(rml_api == NULL) // start new motion
       {
-        rml_api_ = new ReflexxesAPI(UR5_DOF, FPS_period);
-        ur_nh_.setParam("moving", true);
+        rml_api = new ReflexxesAPI(UR5_DOF, FPS_period);
+        ur_nh.setParam("moving", true);
         // set target position and velocity
         for(int i=0; i<UR5_DOF; i++)
         {          
-          rml_i_->TargetPositionVector->VecData[i] = UR5_jpos[UR5_traj_step][i];
-          rml_i_->TargetVelocityVector->VecData[i] = UR5_jvel[UR5_traj_step][i];
+          rml_i->TargetPositionVector->VecData[i] = UR5_jpos[UR5_traj_step][i];
+          rml_i->TargetVelocityVector->VecData[i] = UR5_jvel[UR5_traj_step][i];
         }
       }
       else // continue motion
       {
         // update
-        int rml_result_ = rml_api_->RMLPosition(*rml_i_,rml_o_, rml_flags_);
-        *rml_i_->CurrentPositionVector = *rml_o_->NewPositionVector;
-        *rml_i_->CurrentVelocityVector = *rml_o_->NewVelocityVector;
-        *rml_i_->CurrentAccelerationVector = *rml_o_->NewAccelerationVector;
+        int rml_result_ = rml_api->RMLPosition(*rml_i,rml_o, rml_flags);
+        *rml_i->CurrentPositionVector = *rml_o->NewPositionVector;
+        *rml_i->CurrentVelocityVector = *rml_o->NewVelocityVector;
+        *rml_i->CurrentAccelerationVector = *rml_o->NewAccelerationVector;
         // check if finished
         if(rml_result_ == ReflexxesAPI::RML_FINAL_STATE_REACHED)
-          { free(rml_api_); rml_api_ = NULL; UR5_traj_step++; }
+          { free(rml_api); rml_api = NULL; UR5_traj_step++; }
 
         // copy UR5 state to MuJoCo
         for(int i=0; i<UR5_DOF; i++)
         {
 
-          d->qpos[UR5_jI[i].p] = rml_o_->NewPositionVector->VecData[i];
-          d->qvel[UR5_jI[i].v] = rml_o_->NewVelocityVector->VecData[i];
+          d->qpos[UR5_jI[i].p] = rml_o->NewPositionVector->VecData[i];
+          d->qvel[UR5_jI[i].v] = rml_o->NewVelocityVector->VecData[i];
         }
       }
 
       if(UR5_traj_step == UR5_traj_steps)
-        { ur_nh_.setParam("moving", false); UR5_traj_in = false; }
+        { ur_nh.setParam("moving", false); UR5_traj_in = false; }
     }
     else
     {
@@ -345,7 +348,7 @@ void MujocoNode::loop()
     // gripper control
     if(gripper_state != gripper_in)
     {
-      m->eq_active[lfinger_eqI_] = m->eq_active[rfinger_eqI_] = false;
+      m->eq_active[lfinger_eqI] = m->eq_active[rfinger_eqI] = false;
       if(gripper_in) d->ctrl[gripper_m1I] = d->ctrl[gripper_m2I] = gripper_torque; // close
       else d->ctrl[gripper_m1I] = d->ctrl[gripper_m2I] = -gripper_torque; // open
         
@@ -354,30 +357,27 @@ void MujocoNode::loop()
     
     if(gripper_state)
     {
-      if(gripI_ == -1)
+      if(grippedI == -1)
       {
-        gripI_ = checkGrips(gri_l_gI,gri_r_gI, grip_geoms_);
-        if(gripI_ != -1)
+        grippedI = checkGrips();
+        if(grippedI != -1)
         {
           // set grip weld
-          set_grip_weld_relpose(grip_weldI_, grip_bodies_[gripI_]);
-          m->eq_obj2id[grip_weldI_] = grip_bodies_[gripI_];
-          m->eq_active[grip_weldI_] = true;
-          // lock gripper
-//          d->ctrl[gripper_mI_ofs+0] = d->ctrl[gripper_mI_ofs+1] = 0.0;
-//          m->eq_active[lfinger_eqI_] = m->eq_active[rfinger_eqI_] = true;
+          set_grip_weld_relpose(grippable_bI[grippedI]);
+          m->eq_obj2id[grip_weldI] = grippable_bI[grippedI];
+          m->eq_active[grip_weldI] = true;
         }
       }
     }
     else
     {
-      if(gripI_ != -1)
-        { m->eq_active[grip_weldI_] = false; gripI_ = -1; }
+      if(grippedI != -1)
+        { m->eq_active[grip_weldI] = false; grippedI = -1; }
         
       if(std::min(d->qpos[gri_jI[0].p], d->qpos[gri_jI[1].p]) <= gripper_driver_min_pos)
       {
         d->ctrl[gripper_m1I] = d->ctrl[gripper_m2I] = 0.0;
-        m->eq_active[lfinger_eqI_] = m->eq_active[rfinger_eqI_] = true;
+        m->eq_active[lfinger_eqI] = m->eq_active[rfinger_eqI] = true;
       }
     }
     
@@ -410,7 +410,7 @@ void MujocoNode::loop()
       rgb_msg_.width = viewport.width; rgb_msg_.height = viewport.height;
       rgb_msg_.is_bigendian = true; rgb_msg_.step = 3 * viewport.width;
       rgb_msg_.data = std::vector<unsigned char>(rgb_buf_, rgb_buf_+rgb_buflen_);
-      rgb_pub_.publish(rgb_msg_);
+      ext_cam_pub.publish(rgb_msg_);
       
       // restore rendering to onscreen abstract camera
       cam.fixedcamid = -1; cam.type = mjCAMERA_FREE;
@@ -445,7 +445,7 @@ MujocoNode::~MujocoNode()
   glfwTerminate();
   
   // Reflexxes resources
-  delete rml_api_; delete rml_i_; delete rml_o_;
+  delete rml_api; delete rml_i; delete rml_o;
 }
 
 
@@ -515,16 +515,16 @@ bool MujocoNode::threadlock_cb(mujoco_ros::ThreadLock::Request& req, mujoco_ros:
   else if(req.axis == "z") { axisA_ = "x"; axisB_ = "y"; }
   else { res.ok = false; return true; }
   
-  std::vector<std::string> joint_names_(4); 
-  joint_names_[0] = req.fastener_name + "_t" + axisA_;
-  joint_names_[1] = req.fastener_name + "_t" + axisB_;
-  joint_names_[2] = req.fastener_name + "_r" + axisA_;
-  joint_names_[3] = req.fastener_name + "_r" + axisB_; 
+  std::vector<std::string> other_joint_names_(4); 
+  other_joint_names_[0] = req.fastener_name + "_t" + axisA_;
+  other_joint_names_[1] = req.fastener_name + "_t" + axisB_;
+  other_joint_names_[2] = req.fastener_name + "_r" + axisA_;
+  other_joint_names_[3] = req.fastener_name + "_r" + axisB_; 
   
   int other_joint_indices_[4];
   for(int i=0; i<4; i++)
   {
-    other_joint_indices_[i] = mj_name2id(m, mjOBJ_JOINT, joint_names_[i].c_str());
+    other_joint_indices_[i] = mj_name2id(m, mjOBJ_JOINT, other_joint_names_[i].c_str());
     if(other_joint_indices_[i] == -1) { res.ok = false; return true; }
   }
   
@@ -543,7 +543,7 @@ bool MujocoNode::threadlock_cb(mujoco_ros::ThreadLock::Request& req, mujoco_ros:
       tc_.rI.p = m->jnt_qposadr[jrI_]; tc_.rI.v = m->jnt_dofadr[jrI_];
       threaded_connections.push_back(tc_);
 
-      // zero velocities and lock other joints
+      // other joints: zero velocities and lock
       for(int i=0; i<4; i++)
       {
         d->qvel[m->jnt_dofadr[other_joint_indices_[i]]] = 0.0;
@@ -559,7 +559,7 @@ bool MujocoNode::threadlock_cb(mujoco_ros::ThreadLock::Request& req, mujoco_ros:
       if(threaded_connections[i].fastener_name == req.fastener_name)
         { threaded_connections.erase(threaded_connections.begin()+i); break; }
     
-    // unlock joints
+    // unlock other joints
     for(int i=0; i<4; i++)
       m->jnt_limited[other_joint_indices_[i]] = false;
   }

@@ -79,9 +79,9 @@ class MujocoNode
     bool getpose_cb(mujoco_ros::GetPose::Request& req, mujoco_ros::GetPose::Response& res);
     
     // gripper
-    bool checkGrip(const int& lgI, const int& rgI, const int& targetI);
-    int checkGrips(const int& lgI, const int& rgI, const std::vector<int>& geoms);
-    void set_grip_weld_relpose(const int& grip_weldI, const int& targetI);
+    bool checkGrip(const int& target_gI);
+    int checkGrips();
+    void set_grip_weld_relpose(const int& target_bI);
     
     // other
     void reset_mujoco();
@@ -93,41 +93,39 @@ class MujocoNode
     double FPS_period;
     
     // Reflexxes
-    ReflexxesAPI* rml_api_;
-    RMLPositionInputParameters*  rml_i_;
-    RMLPositionOutputParameters* rml_o_;
-    RMLPositionFlags rml_flags_;
+    ReflexxesAPI* rml_api;
+    RMLPositionInputParameters*  rml_i;
+    RMLPositionOutputParameters* rml_o;
+    RMLPositionFlags rml_flags;
     
     // ROS
-    ros::NodeHandle nh_, ur_nh_;
-    ros::Subscriber jpos_sub_,gri_sub_;
-    ros::Publisher rgb_pub_;
-    ros::ServiceServer reset_srv_, getpose_srv_;
+    ros::NodeHandle nh, ur_nh;
+    ros::Subscriber jpos_sub,gri_sub;
+    ros::ServiceServer reset_srv, getpose_srv;
 
     // UR5
     double UR5_maxVel, UR5_maxAccel, UR5_maxJerk;
     std::vector<std::vector<double> > UR5_jpos, UR5_jvel;
     int UR5_traj_step, UR5_traj_steps; bool UR5_traj_in;
+    std::vector<JointIndex> UR5_jI;
     // gripper    
     double gripper_torque, gripper_driver_min_pos;
     bool gripper_in, gripper_state;
-
-    // other
-    std::vector<JointIndex> UR5_jI, gri_jI;    
+    std::vector<JointIndex> gri_jI;    
     int gripper_m1I,gripper_m2I, gri_l_gI, gri_r_gI,
-      lfinger_eqI_,rfinger_eqI_, gripI_, grip_weldI_;
-    std::vector<int> grip_bodies_,grip_geoms_;
+      lfinger_eqI,rfinger_eqI, grippedI, grip_weldI;
+    std::vector<int> grippable_bI, grippable_gI;
     
     // streaming RGB camera
+    ros::Publisher ext_cam_pub;
     bool ext_cam; std::string ext_cam_name; int ext_camI;
 
 
-
-    //// threaded manip
+    // threaded manip
     bool threadlock_cb(mujoco_ros::ThreadLock::Request& req, mujoco_ros::ThreadLock::Response& res);
     void handle_threaded_connections();
 
-    ros::ServiceServer threadlock_srv_;
+    ros::ServiceServer threadlock_srv;
     std::vector<ThreadedConnection> threaded_connections;
 };
 
