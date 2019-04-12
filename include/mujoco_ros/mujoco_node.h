@@ -121,8 +121,8 @@ class MujocoNode
     std::vector<int> grippable_bI, grippable_gI;
     
     // streaming RGB camera
-    void stream_cam_rgb(mjrRect& viewport);
     void fill_rgb_image_msg(sensor_msgs::Image& msg, const unsigned char* buf, const int& buf_sz);
+    void publish_cam_rgb(mjrRect& viewport);
   
     ros::Publisher ext_cam_pub;
     bool ext_cam; std::string ext_cam_name;

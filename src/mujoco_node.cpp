@@ -206,7 +206,7 @@ void MujocoNode::fill_rgb_image_msg(sensor_msgs::Image& msg,
   }
 }
 
-void MujocoNode::stream_cam_rgb(mjrRect& viewport)
+void MujocoNode::publish_cam_rgb(mjrRect& viewport)
 {
   // render RGB off-screen
   cam.fixedcamid = ext_camI; cam.type = mjCAMERA_FIXED;
@@ -444,7 +444,7 @@ void MujocoNode::loop()
     mjrRect viewport = {0, 0, 0, 0};
     glfwGetFramebufferSize(window, &viewport.width, &viewport.height);
     
-    if(ext_cam) stream_cam_rgb(viewport); // publish RGB
+    if(ext_cam) publish_cam_rgb(viewport); // publish RGB
     
     // update scene and render for viewport
     mjv_updateScene(m, d, &opt, NULL, &cam, mjCAT_ALL, &scn);
