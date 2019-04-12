@@ -536,7 +536,7 @@ void scroll(GLFWwindow* window, double xoffset, double yoffset)
 
 bool MujocoNode::threadlock_cb(mujoco_ros::ThreadLock::Request& req, mujoco_ros::ThreadLock::Response& res)
 {
-  // joint indices for 2 other orthogonal axes
+  // joint indices for other axes
   std::string axisA_, axisB_;
   if(req.axis == "x") { axisA_ = "y"; axisB_ = "z"; }
   else if(req.axis == "y") { axisA_ = "x"; axisB_ = "z"; }
@@ -548,13 +548,9 @@ bool MujocoNode::threadlock_cb(mujoco_ros::ThreadLock::Request& req, mujoco_ros:
   other_joint_names_[1] = req.fastener_name + "_t" + axisB_;
   other_joint_names_[2] = req.fastener_name + "_r" + axisA_;
   other_joint_names_[3] = req.fastener_name + "_r" + axisB_; 
-  
-  int other_joint_indices_[4];
+  int other_jointI_[4];
   for(int i=0; i<4; i++)
-  {
-    other_joint_indices_[i] = mj_name2id(m, mjOBJ_JOINT, other_joint_names_[i].c_str());
-    if(other_joint_indices_[i] == -1) { res.ok = false; return true; }
-  }
+    other_jointI_[i] = mj_name2id(m, mjOBJ_JOINT, other_joint_names_[i].c_str());
   
   if(req.attach_flag)
   {
@@ -571,12 +567,13 @@ bool MujocoNode::threadlock_cb(mujoco_ros::ThreadLock::Request& req, mujoco_ros:
       tc_.rI.p = m->jnt_qposadr[jrI_]; tc_.rI.v = m->jnt_dofadr[jrI_];
       threaded_connections.push_back(tc_);
 
-      // other joints: zero velocities and lock
+      // lock other joints
       for(int i=0; i<4; i++)
-      {
-        d->qvel[m->jnt_dofadr[other_joint_indices_[i]]] = 0.0;
-        m->jnt_limited[other_joint_indices_[i]] = true;
-      }
+        if(other_jointI_[i] != -1)
+        {
+          d->qvel[m->jnt_dofadr[other_jointI_[i]]] = 0.0;
+          m->jnt_limited[other_jointI_[i]] = true;
+        }
     }
     else { res.ok = false; return true; }
   }
@@ -589,7 +586,8 @@ bool MujocoNode::threadlock_cb(mujoco_ros::ThreadLock::Request& req, mujoco_ros:
     
     // unlock other joints
     for(int i=0; i<4; i++)
-      m->jnt_limited[other_joint_indices_[i]] = false;
+      if(other_jointI_[i] != -1)
+        m->jnt_limited[other_jointI_[i]] = false;
   }
       
   res.ok = true;
