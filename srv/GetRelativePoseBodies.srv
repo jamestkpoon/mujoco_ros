@@ -1,0 +1,5 @@
+string bodyA_name
+string bodyB_name
+---
+geometry_msgs/Pose relpose
+bool ok

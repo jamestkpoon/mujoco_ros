@@ -77,6 +77,7 @@ find_library(reflexxesII_lib ReflexxesTypeII)
  add_service_files(
    FILES
    GetPose.srv
+   GetRelativePoseBodies.srv
    ThreadLock.srv
  )
 

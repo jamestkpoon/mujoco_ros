@@ -30,7 +30,7 @@
             <camera name="ros_cam" euler="-1.5708 -1.5708 0" fovy="43.3" /> <!-- needs l/r flip -->
         </body>
 
-        <body name="base" pos="0.66 -0.2 0.1">
+        <body name="base" pos="0.66 -0.2 0.01">
             <geom name="base_geom" size="0.075 0.045 0.0075" type="box" material="RobMat"/>
             <joint type="free"/>
             

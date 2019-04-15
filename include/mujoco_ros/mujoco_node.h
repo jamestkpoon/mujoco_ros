@@ -13,6 +13,7 @@
 
 #include "std_srvs/Empty.h"
 #include "mujoco_ros/GetPose.h"
+#include "mujoco_ros/GetRelativePoseBodies.h"
 
 // MuJoCo
 #include "mujoco.h"
@@ -23,9 +24,6 @@
 #include <RMLPositionInputParameters.h>
 #include <RMLPositionOutputParameters.h>
 
-// threaded manip
-#include "mujoco_ros/ThreadLock.h"
-
 
 
 #define GLFW_W 640
@@ -33,6 +31,13 @@
 #define GLFW_C 3
 
 #define UR5_DOF 6
+
+
+
+// threaded manip
+#include "mujoco_ros/ThreadLock.h"
+
+#define JNT_LOCK_TOL 0.005
 
 
 
@@ -81,10 +86,14 @@ class MujocoNode
     
     bool reset_mujoco_cb(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res);
     bool getpose_cb(mujoco_ros::GetPose::Request& req, mujoco_ros::GetPose::Response& res);
+    bool get_brelpose_cb(mujoco_ros::GetRelativePoseBodies::Request& req,
+        mujoco_ros::GetRelativePoseBodies::Response& res);
     
     // gripper
     bool checkGrip(const int& target_gI);
     int checkGrips();
+    void xpose_to_tf(tf::Transform& tf_out, const int& bI);
+    void get_relpose(tf::Transform& tf_out, const int& baI, const int& bbI);
     void set_grip_weld_relpose(const int& target_bI);
     
     // other
@@ -105,7 +114,7 @@ class MujocoNode
     // ROS
     ros::NodeHandle nh, ur_nh;
     ros::Subscriber jpos_sub,gri_sub;
-    ros::ServiceServer reset_srv, getpose_srv;
+    ros::ServiceServer reset_srv, getpose_srv,get_brelpose_srv;
 
     // UR5
     double UR5_maxVel, UR5_maxAccel, UR5_maxJerk;
