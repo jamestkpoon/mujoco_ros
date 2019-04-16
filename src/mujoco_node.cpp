@@ -287,16 +287,17 @@ void MujocoNode::reset_mujoco()
   lfinger_eqI = mj_name2id(m, mjOBJ_EQUALITY, "lfinger_lock"); // gripper finger welds
   rfinger_eqI = mj_name2id(m, mjOBJ_EQUALITY, "rfinger_lock");
 
-  std::vector<std::string> grip_body_names_; nh.getParam("grippable_bodies", grip_body_names_);
-  size_t n_grip_bodies_ = grip_body_names_.size();
+  nh.getParam("grippable_bodies", grippable_body_names);
+  size_t n_grip_bodies_ = grippable_body_names.size();
   grippedI = -1; grip_weldI = mj_name2id(m, mjOBJ_EQUALITY, "grip_");
   grippable_bI.resize(n_grip_bodies_); grippable_gI.resize(n_grip_bodies_);
   for(size_t i=0; i<n_grip_bodies_; i++)
   {
     // bodies for welding, geoms for collision checking
-    grippable_bI[i] = mj_name2id(m, mjOBJ_BODY, grip_body_names_[i].c_str());
-    grippable_gI[i] = mj_name2id(m, mjOBJ_GEOM, (grip_body_names_[i]+"_geom").c_str());
+    grippable_bI[i] = mj_name2id(m, mjOBJ_BODY, grippable_body_names[i].c_str());
+    grippable_gI[i] = mj_name2id(m, mjOBJ_GEOM, (grippable_body_names[i]+"_geom").c_str());
   }
+  ur_nh.setParam("gripped_object", "");
 
   // move UR5 to initial pose after locking gripper
   UR5_traj_in = false; gripper_in = false; gripper_state = false;
@@ -441,13 +442,18 @@ void MujocoNode::loop()
           set_grip_weld_relpose(grippable_bI[grippedI]);
           m->eq_obj2id[grip_weldI] = grippable_bI[grippedI];
           m->eq_active[grip_weldI] = true;
+          // set gripped object rosparam
+          ur_nh.setParam("gripped_object", grippable_body_names[grippedI]);
         }
       }
     }
     else
     {
       if(grippedI != -1)
-        { m->eq_active[grip_weldI] = false; grippedI = -1; }
+      {
+        m->eq_active[grip_weldI] = false;
+        grippedI = -1; ur_nh.setParam("gripped_object", "");
+      }
         
       if(std::min(d->qpos[gri_jI[0].p], d->qpos[gri_jI[1].p]) <= gripper_driver_min_pos)
       {

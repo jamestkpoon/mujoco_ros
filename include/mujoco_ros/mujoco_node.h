@@ -127,6 +127,7 @@ class MujocoNode
     std::vector<JointIndex> gri_jI;    
     int gripper_m1I,gripper_m2I, gri_l_gI, gri_r_gI,
       lfinger_eqI,rfinger_eqI, grippedI, grip_weldI;
+    std::vector<std::string> grippable_body_names;
     std::vector<int> grippable_bI, grippable_gI;
     
     // streaming RGB camera
