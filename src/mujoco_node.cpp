@@ -29,6 +29,8 @@ MujocoNode::MujocoNode()
     jpos_sub = ur_nh.subscribe("command/joint_positions", 1, &MujocoNode::jpos_cb, this);
     gri_sub = ur_nh.subscribe("command/gripper", 1, &MujocoNode::gripper_cb, this);
     
+    jstate_pub = ur_nh.advertise<std_msgs::Float32MultiArray>("sensors/joint_state", 1);
+    
     reset_srv = nh.advertiseService("reset", &MujocoNode::reset_mujoco_cb, this);
 //    getpose_srv = nh.advertiseService("get_object_pose", &MujocoNode::getpose_cb, this);
     get_brelpose_srv = nh.advertiseService("get_relative_pose_bodies", &MujocoNode::get_brelpose_cb, this);
@@ -238,7 +240,7 @@ void MujocoNode::publish_cam_rgb(mjrRect& viewport)
   mjr_render(viewport, &scn, &con);
   // read buffer
   int rgb_buflen_ = GLFW_W*GLFW_H * GLFW_C;
-  unsigned char* rgb_buf_raw_ = (unsigned char*)malloc(rgb_buflen_);
+  unsigned char rgb_buf_raw_[rgb_buflen_];
   mjr_readPixels(rgb_buf_raw_, NULL, viewport, &con);
   
   // publish
@@ -250,7 +252,6 @@ void MujocoNode::publish_cam_rgb(mjrRect& viewport)
   cam.fixedcamid = -1; cam.type = mjCAMERA_FREE;
   mjr_setBuffer(mjFB_WINDOW, &con);
 }
-
 
 
 
@@ -420,6 +421,16 @@ void MujocoNode::loop()
         d->qvel[UR5_jI[i].v] = 0.0;
       }
     }
+    
+    // publish joint state
+    std_msgs::Float32MultiArray UR5_jstate_out_;
+    UR5_jstate_out_.data.resize(UR5_DOF*2);
+    for(int i=0; i<UR5_DOF; i++)
+    {
+      UR5_jstate_out_.data[i] = d->qpos[UR5_jI[i].p];
+      UR5_jstate_out_.data[UR5_DOF+i] = d->qvel[UR5_jI[i].v];
+    }
+    jstate_pub.publish(UR5_jstate_out_);
     
     // gripper control
     if(gripper_state != gripper_in)

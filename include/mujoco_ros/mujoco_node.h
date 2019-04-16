@@ -121,6 +121,7 @@ class MujocoNode
     std::vector<std::vector<double> > UR5_jpos, UR5_jvel;
     int UR5_traj_step, UR5_traj_steps; bool UR5_traj_in;
     std::vector<JointIndex> UR5_jI;
+    ros::Publisher jstate_pub;
     // gripper    
     double gripper_torque, gripper_driver_min_pos;
     bool gripper_in, gripper_state;

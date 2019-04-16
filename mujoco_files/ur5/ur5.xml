@@ -16,8 +16,8 @@
         <mesh file="ur5/robotiq_85_inner_knuckle_link.stl" />
         <mesh file="ur5/robotiq_85_knuckle_link.stl" />
         
-        <material name="RobMat" specular="0.9" shininess="0.5" reflectance="0" rgba="0.7 0.7 0.7 1" emission="0.1" />
-        <material name="GriMat" specular="0.9" shininess="0.5" reflectance="0" rgba="0.1 0.1 0.1 1" emission="0.1" />
+        <material name="RobMat" specular="0.9" shininess="0.5" reflectance="0" rgba="0.7 0.7 0.7 1" emission="0" />
+        <material name="GriMat" specular="0.9" shininess="0.5" reflectance="0" rgba="0.1 0.1 0.1 1" emission="0" />
         <material name="BasketMat" specular="0" shininess="0" reflectance="0" rgba="0.26 0.16 0.16796875 1" emission="0" />
         <material name="Light" specular="0" shininess="0.6" reflectance="0.9" rgba="0.5 0.5 1 1" emission="0.7" />
         
@@ -25,7 +25,7 @@
         <texture name="floor_tex"   type="2d"        builtin="checker" rgb1=".2 .3 .4" rgb2=".1 .2 .3" width="100" height="100" />
         <texture name="metal"        type="cube"     file="textures/metal1.png"/>
         <material name="floor_mat"      texture="floor_tex"  shininess="0.8" texrepeat="10 10" specular="0.7"  reflectance="0.5" />
-        <material name="bench_mat"      texture="metal"   shininess="0.1" specular="0.5" reflectance="0.2"/>
+        <material name="bench_mat"      texture="metal"   shininess="1.0" specular="0.5" reflectance="0.2"/>
     </asset>
     
    <worldbody>
@@ -41,7 +41,7 @@
         </body-->
 
         <!-- Lighting and furniture -->
-        <light pos="1 0 3" castshadow="true" directional="true" dir="0 0 -1" />
+<!--        <light pos="0 0 3" castshadow="true" directional="true" dir="0 0 -1" />-->
         <geom name="floor" pos="2 0 -1" quat="0 0 0 1" size="5 5 1" type="plane" rgba="1 0.83 0.61 1" material="floor_mat" />
         <geom name="table" pos="0.3 0 -0.0025" size="0.4 0.4 0.005" type="box" material="bench_mat"/>
 
