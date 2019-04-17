@@ -2,7 +2,7 @@
 
 MujocoNode::MujocoNode()
 {
-    // UR5 constants
+    // UR5 constants from Vrep
     UR5_maxVel =  180 * (M_PI/180); UR5_maxAccel = 40 * (M_PI/180); UR5_maxJerk = 80 * (M_PI/180);
     // gripper constants
     gripper_torque = 1.0; gripper_driver_min_pos = 0.05;
@@ -305,7 +305,8 @@ void MujocoNode::reset_mujoco()
   ur_nh.setParam("gripped_object", "");
 
   // move UR5 to initial pose after locking gripper
-  UR5_traj_in = false; gripper_in = false; gripper_state = false;
+  UR5_traj_in = false; UR5_traj_started = false;
+  gripper_in = false; gripper_state = false;
   m->eq_active[lfinger_eqI] = m->eq_active[rfinger_eqI] = true; // lock gripper
   std_msgs::Float32MultiArray initial_joint_pose_;
   initial_joint_pose_.data = std::vector<float>(UR5_DOF, 0.0);
@@ -348,9 +349,10 @@ void MujocoNode::reset_mujoco()
   
   //// Reflexxes
   
-  rml_api = NULL;
+  rml_api = new ReflexxesAPI(UR5_DOF, FPS_period);
   rml_i = new RMLPositionInputParameters(UR5_DOF);
   rml_o = new RMLPositionOutputParameters(UR5_DOF);
+  rml_flags.SynchronizationBehavior = RMLPositionFlags::ONLY_TIME_SYNCHRONIZATION;
   
   for(int i=0; i<UR5_DOF; i++)
   {
@@ -383,38 +385,39 @@ void MujocoNode::loop()
     // UR5 joint control
     if(UR5_traj_in)
     {
-      if(rml_api == NULL) // start new motion
+      if(!UR5_traj_started) // start new motion
       {
-        rml_api = new ReflexxesAPI(UR5_DOF, FPS_period);
-        ur_nh.setParam("moving", true);
-        // set target position and velocity
         for(int i=0; i<UR5_DOF; i++)
-        {          
+        {
+          // set target position and velocity
           rml_i->TargetPositionVector->VecData[i] = UR5_jpos[UR5_traj_step][i];
           rml_i->TargetVelocityVector->VecData[i] = UR5_jvel[UR5_traj_step][i];
         }
+        ur_nh.setParam("moving", true); UR5_traj_started = true;
       }
-      else // continue motion
-      {
-        // update
-        int rml_result_ = rml_api->RMLPosition(*rml_i,rml_o, rml_flags);
-        *rml_i->CurrentPositionVector = *rml_o->NewPositionVector;
-        *rml_i->CurrentVelocityVector = *rml_o->NewVelocityVector;
-        *rml_i->CurrentAccelerationVector = *rml_o->NewAccelerationVector;
-        // check if finished
-        if(rml_result_ == ReflexxesAPI::RML_FINAL_STATE_REACHED)
-          { free(rml_api); rml_api = NULL; UR5_traj_step++; }
-
-        // copy UR5 state to MuJoCo
-        for(int i=0; i<UR5_DOF; i++)
-        {
-          d->qpos[UR5_jI[i].p] = rml_o->NewPositionVector->VecData[i];
-          d->qvel[UR5_jI[i].v] = rml_o->NewVelocityVector->VecData[i];
-        }
-      }
-
+      
+      // continue motion
+      int rml_result_ = rml_api->RMLPosition(*rml_i,rml_o, rml_flags);
+      *rml_i->CurrentPositionVector = *rml_o->NewPositionVector;
+      *rml_i->CurrentVelocityVector = *rml_o->NewVelocityVector;
+      *rml_i->CurrentAccelerationVector = *rml_o->NewAccelerationVector;
+      // check if finished
+      if(rml_result_ == ReflexxesAPI::RML_FINAL_STATE_REACHED)
+        { UR5_traj_started = false; UR5_traj_step++; }
+        
       if(UR5_traj_step == UR5_traj_steps)
-        { ur_nh.setParam("moving", false); UR5_traj_in = false; }
+      {
+        ur_nh.setParam("moving", false); UR5_traj_in = false;
+        for(int i=0; i<UR5_DOF; i++)
+          rml_i->CurrentAccelerationVector->VecData[i] = 0.0;
+      }
+
+      // copy UR5 state to MuJoCo
+      for(int i=0; i<UR5_DOF; i++)
+      {
+        d->qpos[UR5_jI[i].p] = rml_o->NewPositionVector->VecData[i];
+        d->qvel[UR5_jI[i].v] = rml_o->NewVelocityVector->VecData[i];
+      }
     }
     else
     {
@@ -694,7 +697,6 @@ double MujocoNode::randomize_with_noise_01(const double& mean, const double& noi
 bool MujocoNode::randomize_physical_cb(mujoco_ros::RandomizePhysicalAttribute::Request& req, mujoco_ros::RandomizePhysicalAttribute::Response& res)
 {
   res.ok.clear();
-
   
   if(req.noise.size() == 6*req.body_names.size())
     for(int i=0; i<(int)req.body_names.size(); i++)
@@ -745,3 +747,4 @@ int main(int argc, char **argv)
   
   return 0;
 }
+

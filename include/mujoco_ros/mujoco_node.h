@@ -133,7 +133,7 @@ class MujocoNode
     // UR5
     double UR5_maxVel, UR5_maxAccel, UR5_maxJerk;
     std::vector<std::vector<double> > UR5_jpos, UR5_jvel;
-    int UR5_traj_step, UR5_traj_steps; bool UR5_traj_in;
+    int UR5_traj_step, UR5_traj_steps; bool UR5_traj_in, UR5_traj_started;
     std::vector<JointIndex> UR5_jI;
     ros::Publisher jstate_pub;
     // gripper    
