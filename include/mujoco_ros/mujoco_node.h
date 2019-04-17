@@ -25,7 +25,7 @@
 #include <RMLPositionOutputParameters.h>
 
 
-
+// defines
 #define GLFW_W 640
 #define GLFW_H 480
 #define GLFW_C 3
@@ -39,8 +39,6 @@
 
 #define JNT_LOCK_TOL 0.005
 
-
-
 struct JointIndex
 {
   int I, p,v; // joint number,  position/velocity indices
@@ -51,6 +49,23 @@ struct ThreadedConnection
   std::string fastener_name;
   double pitch; JointIndex jI[6];
 };
+
+
+
+// randomization
+#include "mujoco_ros/RandomizeTexturalAttribute.h"
+#include "mujoco_ros/RandomizePhysicalAttribute.h"
+
+double rand_01()
+{
+  // https://stackoverflow.com/a/6219525
+  return (double)rand() / (double)((unsigned)RAND_MAX);
+}
+
+double rand_pm1()
+{
+  return 2*rand_01() - 1.0;
+}
 
 
 
@@ -86,8 +101,7 @@ class MujocoNode
     
     bool reset_mujoco_cb(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res);
     bool getpose_cb(mujoco_ros::GetPose::Request& req, mujoco_ros::GetPose::Response& res);
-    bool get_brelpose_cb(mujoco_ros::GetRelativePoseBodies::Request& req,
-        mujoco_ros::GetRelativePoseBodies::Response& res);
+    bool get_brelpose_cb(mujoco_ros::GetRelativePoseBodies::Request& req, mujoco_ros::GetRelativePoseBodies::Response& res);
     
     // gripper
     bool checkGrip(const int& target_gI);
@@ -147,6 +161,15 @@ class MujocoNode
 
     ros::ServiceServer threadlock_srv;
     std::vector<ThreadedConnection> threaded_connections;
+    
+    
+    
+    // randomization
+    bool randomize_textural_cb(mujoco_ros::RandomizeTexturalAttribute::Request& req, mujoco_ros::RandomizeTexturalAttribute::Response& res);
+    bool randomize_physical_cb(mujoco_ros::RandomizePhysicalAttribute::Request& req, mujoco_ros::RandomizePhysicalAttribute::Response& res);
+    double randomize_with_noise_01(const double& mean, const double& noise);
+    
+    ros::ServiceServer randtex_srv, randphys_srv;
 };
 
 

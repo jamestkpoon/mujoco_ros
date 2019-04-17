@@ -79,6 +79,8 @@ find_library(reflexxesII_lib ReflexxesTypeII)
    GetPose.srv
    GetRelativePoseBodies.srv
    ThreadLock.srv
+   RandomizeTexturalAttribute.srv
+   RandomizePhysicalAttribute.srv
  )
 
 ## Generate actions in the 'action' folder

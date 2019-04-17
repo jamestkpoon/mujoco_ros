@@ -48,6 +48,10 @@ MujocoNode::MujocoNode()
     
     // threaded manip
     threadlock_srv = nh.advertiseService("thread_lock", &MujocoNode::threadlock_cb, this);
+   
+    // randomization
+    randtex_srv = nh.advertiseService("rand/textural", &MujocoNode::randomize_textural_cb, this);
+    randphys_srv = nh.advertiseService("rand/physical", &MujocoNode::randomize_physical_cb, this);
 }
 
 
@@ -115,18 +119,18 @@ bool MujocoNode::getpose_cb(mujoco_ros::GetPose::Request& req, mujoco_ros::GetPo
     
     if(type_ == mjOBJ_BODY)
     {
-      for(int i=0; i<3; i++) res.pos[i] = d->xpos[I_*3+i];
-      for(int i=0; i<9; i++) res.rot[i] = d->xmat[I_*9+i];
+      for(int i=0; i<3; i++) res.pos[i] = d->xpos[3*I_+i];
+      for(int i=0; i<9; i++) res.rot[i] = d->xmat[9*I_+i];
     }
     else if(type_ == mjOBJ_GEOM)
     {
-      for(int i=0; i<3; i++) res.pos[i] = d->geom_xpos[I_*3+i];
-      for(int i=0; i<9; i++) res.rot[i] = d->geom_xmat[I_*9+i];
+      for(int i=0; i<3; i++) res.pos[i] = d->geom_xpos[3*I_+i];
+      for(int i=0; i<9; i++) res.rot[i] = d->geom_xmat[9*I_+i];
     }
     else if(type_ == mjOBJ_SITE)
     {
-      for(int i=0; i<3; i++) res.pos[i] = d->site_xpos[I_*3+i];
-      for(int i=0; i<9; i++) res.rot[i] = d->site_xmat[I_*9+i];
+      for(int i=0; i<3; i++) res.pos[i] = d->site_xpos[3*I_+i];
+      for(int i=0; i<9; i++) res.rot[i] = d->site_xmat[9*I_+i];
     }
   }
   else { res.pos.clear(); res.rot.clear(); }
@@ -178,8 +182,8 @@ int MujocoNode::checkGrips()
 
 void MujocoNode::xpose_to_tf(tf::Transform& tf_out, const int& bI)
 {
-  tf_out.setOrigin(tf::Vector3(d->xpos[bI*3+0], d->xpos[bI*3+1], d->xpos[bI*3+2]));
-  tf_out.setRotation(tf::Quaternion(d->xquat[bI*4+1], d->xquat[bI*4+2], d->xquat[bI*4+3], d->xquat[bI*4+0]));
+  tf_out.setOrigin(tf::Vector3(d->xpos[3*bI+0], d->xpos[3*bI+1], d->xpos[3*bI+2]));
+  tf_out.setRotation(tf::Quaternion(d->xquat[4*bI+1], d->xquat[4*bI+2], d->xquat[4*bI+3], d->xquat[4*bI+0]));
 }
 
 void MujocoNode::get_relpose(tf::Transform& tf_out, const int& baI, const int& bbI)
@@ -648,6 +652,87 @@ void MujocoNode::handle_threaded_connections()
     d->qvel[threaded_connections[i].jI[0].v] = d->qvel[threaded_connections[i].jI[1].v] * threaded_connections[i].pitch;
     d->qpos[threaded_connections[i].jI[0].p] += d->qvel[threaded_connections[i].jI[0].v] * FPS_period;
   }
+}
+
+
+
+// randomization
+
+bool MujocoNode::randomize_textural_cb(mujoco_ros::RandomizeTexturalAttribute::Request& req, mujoco_ros::RandomizeTexturalAttribute::Response& res)
+{
+  res.ok.clear();
+  
+  if(req.noise.size() == 8*req.material_names.size())
+    for(int i=0; i<(int)req.material_names.size(); i++)
+    {
+      int matI_ = mj_name2id(m, mjOBJ_MATERIAL, req.material_names[i].c_str());
+      if(matI_ != -1)
+      {
+        // req.noise: [ emission*1, specular*1, shininess*1, reflectance*1, rgba*4 ] * N_material_names
+        m->mat_emission[matI_] = randomize_with_noise_01(m->mat_emission[matI_], req.noise[8*i+0]);
+        m->mat_specular[matI_] = randomize_with_noise_01(m->mat_specular[matI_], req.noise[8*i+1]);
+        m->mat_shininess[matI_] = randomize_with_noise_01(m->mat_shininess[matI_], req.noise[8*i+2]);
+        m->mat_reflectance[matI_] = randomize_with_noise_01(m->mat_reflectance[matI_], req.noise[8*i+3]);
+        for(int i=0; i<4; i++)
+          m->mat_rgba[4*matI_+i] = randomize_with_noise_01(m->mat_rgba[4*matI_+i], req.noise[8*i+4+i]);
+          
+        res.ok.push_back(true);
+      }
+      else res.ok.push_back(false);
+    }
+  
+  return true;
+}
+
+double MujocoNode::randomize_with_noise_01(const double& mean, const double& noise)
+{
+  if(mean == 0.0) return noise * rand_01();
+  else if(mean == 1.0) return 1.0 - (noise * rand_01());
+  else return std::max(0.0, std::min(mean + (noise * rand_pm1()), 1.0));
+}
+
+bool MujocoNode::randomize_physical_cb(mujoco_ros::RandomizePhysicalAttribute::Request& req, mujoco_ros::RandomizePhysicalAttribute::Response& res)
+{
+  res.ok.clear();
+
+  
+  if(req.noise.size() == 6*req.body_names.size())
+    for(int i=0; i<(int)req.body_names.size(); i++)
+    {
+      int bI_ = mj_name2id(m, mjOBJ_BODY, req.body_names[i].c_str());
+      if(bI_ != -1)
+      {      
+        // req.noise: [ translation*3, euler*3 ] * N_body_names        
+        JointIndex jI_[6]; bool jI_ok_ = true;
+        jI_[0].I = mj_name2id(m, mjOBJ_JOINT, (req.body_names[i]+"_tx").c_str());
+        jI_[1].I = mj_name2id(m, mjOBJ_JOINT, (req.body_names[i]+"_ty").c_str());
+        jI_[2].I = mj_name2id(m, mjOBJ_JOINT, (req.body_names[i]+"_tz").c_str());
+        jI_[3].I = mj_name2id(m, mjOBJ_JOINT, (req.body_names[i]+"_rx").c_str());
+        jI_[4].I = mj_name2id(m, mjOBJ_JOINT, (req.body_names[i]+"_ry").c_str());
+        jI_[5].I = mj_name2id(m, mjOBJ_JOINT, (req.body_names[i]+"_rz").c_str());
+        for(int j=0; j<6; j++)
+          if(jI_[j].I != -1)
+          {
+            jI_[j].p = m->jnt_qposadr[jI_[j].I];
+            jI_[j].v = m->jnt_dofadr[jI_[j].I];
+          }
+          else { jI_ok_ = false; break; }
+         
+        if(jI_ok_)
+        {
+          for(int j=0; j<6; j++)
+          {
+            d->qpos[jI_[j].p] += req.noise[6*i+j] * rand_pm1();
+            d->qvel[jI_[j].v] = 0.0; 
+          }
+        }
+        
+        res.ok.push_back(jI_ok_);
+      }
+      else res.ok.push_back(false);
+    }
+  
+  return true;
 }
 
 

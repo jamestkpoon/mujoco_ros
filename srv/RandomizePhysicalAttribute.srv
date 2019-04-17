@@ -1,0 +1,4 @@
+string[] body_names
+float64[] noise
+---
+bool[] ok
