@@ -7,7 +7,10 @@ MujocoNode::MujocoNode()
     // gripper constants
     gripper_torque = 1.0; gripper_driver_min_pos = 0.05;
 
-  
+    // sim FPS
+    int fps_; nh.getParam("FPS", fps_); FPS_period = 1.0 / fps_;
+    
+     
 
     // initialize GLFW
     glfwInit();
@@ -15,14 +18,23 @@ MujocoNode::MujocoNode()
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
 
+    glfw_button_left = glfw_button_middle = glfw_button_right = false;
+    glfw_lastx = glfw_lasty = 0;
+
+    glfwSetCursorPosCallback(window, mouse_move);
+    glfwSetMouseButtonCallback(window, mouse_button);
+    glfwSetScrollCallback(window, scroll);
+
+    // initialize Reflexxes
+    rml_api = new ReflexxesAPI(UR5_DOF, FPS_period);
+    rml_i = new RMLPositionInputParameters(UR5_DOF);
+    rml_o = new RMLPositionOutputParameters(UR5_DOF);
+    rml_flags.SynchronizationBehavior = RMLPositionFlags::ONLY_TIME_SYNCHRONIZATION;
+
     // activate MuJoCo, initialize
     std::string mujoco_key_; nh.getParam("key", mujoco_key_);
     mj_activate(mujoco_key_.c_str());
-    reset_mujoco();
-    
-    int fps_; nh.getParam("FPS", fps_); FPS_period = 1.0 / fps_;
-      
-      
+    reset_mujoco(true);     
 
     // ROS comms  
     ur_nh = ros::NodeHandle("ur5");
@@ -98,7 +110,7 @@ void MujocoNode::gripper_cb(const std_msgs::Bool& msg)
 
 bool MujocoNode::reset_mujoco_cb(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res)
 {
-  reset_mujoco();
+  reset_mujoco(false);
   
   return true;
 }
@@ -261,53 +273,58 @@ void MujocoNode::publish_cam_rgb(mjrRect& viewport)
 
 //// reset fn, 'main' loop, deconstructor
 
-void MujocoNode::reset_mujoco()
+void MujocoNode::reset_mujoco(bool init)
 {
   //// MuJoCo
   
-  // load model  
-  m = NULL; d = NULL;
+  // load model
+  if(!init) { mj_deleteModel(m); mj_deleteData(d); }
+  
   std::string mujoco_xml_; nh.getParam("xml", mujoco_xml_);
-  char error[1000];
+  char error[1000];  
   m = mj_loadXML(mujoco_xml_.c_str(), NULL, error, 1000);
   d = mj_makeData(m);
   
-  // UR5 indexing
-  UR5_jI.resize(UR5_DOF);
-  for(int i=0; i<UR5_DOF; i++)
+  if(init)
   {
-    std::string jn_ = "joint" + boost::lexical_cast<std::string>(i+1);
-    int i_ = mj_name2id(m, mjOBJ_JOINT, jn_.c_str());
-    UR5_jI[i].p = m->jnt_qposadr[i_]; UR5_jI[i].v = m->jnt_dofadr[i_];
+    // UR5 indexing
+    UR5_jI.resize(UR5_DOF);
+    for(int i=0; i<UR5_DOF; i++)
+    {
+      std::string jn_ = "joint" + boost::lexical_cast<std::string>(i+1);
+      int i_ = mj_name2id(m, mjOBJ_JOINT, jn_.c_str());
+      UR5_jI[i].p = m->jnt_qposadr[i_]; UR5_jI[i].v = m->jnt_dofadr[i_];
+    }
+    
+    // gripper indexing
+    gri_jI.resize(2);
+    gri_jI[0].p = m->jnt_qposadr[mj_name2id(m, mjOBJ_JOINT, "joint7_1")];
+    gri_jI[1].p = m->jnt_qposadr[mj_name2id(m, mjOBJ_JOINT, "joint7_2")];
+    gripper_m1I = mj_name2id(m, mjOBJ_ACTUATOR, "gripper_close_1"); // gripper motors
+    gripper_m2I = mj_name2id(m, mjOBJ_ACTUATOR, "gripper_close_2");
+    gri_l_gI = mj_name2id(m, mjOBJ_GEOM, "left_follower_mesh"); // gripper finger geoms
+    gri_r_gI = mj_name2id(m, mjOBJ_GEOM, "right_follower_mesh");
+    lfinger_eqI = mj_name2id(m, mjOBJ_EQUALITY, "lfinger_lock"); // gripper finger welds
+    rfinger_eqI = mj_name2id(m, mjOBJ_EQUALITY, "rfinger_lock");
+
+    nh.getParam("grippable_bodies", grippable_body_names);
+    size_t n_grip_bodies_ = grippable_body_names.size();
+    grippedI = -1; grip_weldI = mj_name2id(m, mjOBJ_EQUALITY, "grip_");
+    grippable_bI.resize(n_grip_bodies_); grippable_gI.resize(n_grip_bodies_);
+    for(size_t i=0; i<n_grip_bodies_; i++)
+    {
+      // bodies for welding, geoms for collision checking
+      grippable_bI[i] = mj_name2id(m, mjOBJ_BODY, grippable_body_names[i].c_str());
+      grippable_gI[i] = mj_name2id(m, mjOBJ_GEOM, (grippable_body_names[i]+"_geom").c_str());
+    }
   }
   
-  // gripper indexing
-  gri_jI.resize(2);
-  gri_jI[0].p = m->jnt_qposadr[mj_name2id(m, mjOBJ_JOINT, "joint7_1")];
-  gri_jI[1].p = m->jnt_qposadr[mj_name2id(m, mjOBJ_JOINT, "joint7_2")];
-  gripper_m1I = mj_name2id(m, mjOBJ_ACTUATOR, "gripper_close_1"); // gripper motors
-  gripper_m2I = mj_name2id(m, mjOBJ_ACTUATOR, "gripper_close_2");
-  gri_l_gI = mj_name2id(m, mjOBJ_GEOM, "left_follower_mesh"); // gripper finger geoms
-  gri_r_gI = mj_name2id(m, mjOBJ_GEOM, "right_follower_mesh");
-  lfinger_eqI = mj_name2id(m, mjOBJ_EQUALITY, "lfinger_lock"); // gripper finger welds
-  rfinger_eqI = mj_name2id(m, mjOBJ_EQUALITY, "rfinger_lock");
-
-  nh.getParam("grippable_bodies", grippable_body_names);
-  size_t n_grip_bodies_ = grippable_body_names.size();
-  grippedI = -1; grip_weldI = mj_name2id(m, mjOBJ_EQUALITY, "grip_");
-  grippable_bI.resize(n_grip_bodies_); grippable_gI.resize(n_grip_bodies_);
-  for(size_t i=0; i<n_grip_bodies_; i++)
-  {
-    // bodies for welding, geoms for collision checking
-    grippable_bI[i] = mj_name2id(m, mjOBJ_BODY, grippable_body_names[i].c_str());
-    grippable_gI[i] = mj_name2id(m, mjOBJ_GEOM, (grippable_body_names[i]+"_geom").c_str());
-  }
-  ur_nh.setParam("gripped_object", "");
-
-  // move UR5 to initial pose after locking gripper
-  UR5_traj_in = false; UR5_traj_started = false;
+  // lock gripper
   gripper_in = false; gripper_state = false;
-  m->eq_active[lfinger_eqI] = m->eq_active[rfinger_eqI] = true; // lock gripper
+  m->eq_active[lfinger_eqI] = m->eq_active[rfinger_eqI] = true;
+  ur_nh.setParam("gripped_object", "");
+  // move UR5 to initial pose
+  UR5_traj_in = false; UR5_traj_started = false;
   std_msgs::Float32MultiArray initial_joint_pose_;
   initial_joint_pose_.data = std::vector<float>(UR5_DOF, 0.0);
   initial_joint_pose_.data[1] = -M_PI/2;
@@ -317,7 +334,6 @@ void MujocoNode::reset_mujoco()
     d->qvel[UR5_jI[i].v] = 0.0;
   }
   jpos_cb(initial_joint_pose_);
-
   // "settle" the simulation
   double settle_time_; nh.getParam("start_time", settle_time_);
   while(d->time < settle_time_) mj_step(m, d);
@@ -325,35 +341,18 @@ void MujocoNode::reset_mujoco()
 
 
   //// GLFW
-
-  // initialize visualization data structures
-  mjv_defaultCamera(&cam);
-  mjv_defaultOption(&opt);
-  mjv_defaultScene(&scn);
-  mjr_defaultContext(&con);
+  if(init) { mjv_defaultCamera(&cam); mjv_defaultOption(&opt); }
+  else { mjv_freeScene(&scn); mjr_freeContext(&con); }
 
   // create scene and context
+  mjv_defaultScene(&scn);
+  mjr_defaultContext(&con);  
   mjv_makeScene(m, &scn, 2000);
   mjr_makeContext(m, &con, mjFONTSCALE_150);
-
-  // abstract camera control variables
-  glfw_button_left = glfw_button_middle = glfw_button_right = false;
-  glfw_lastx = glfw_lasty = 0;
-
-  // set GLFW callbacks
-  glfwSetCursorPosCallback(window, mouse_move);
-  glfwSetMouseButtonCallback(window, mouse_button);
-  glfwSetScrollCallback(window, scroll);
   
   
   
   //// Reflexxes
-  
-  rml_api = new ReflexxesAPI(UR5_DOF, FPS_period);
-  rml_i = new RMLPositionInputParameters(UR5_DOF);
-  rml_o = new RMLPositionOutputParameters(UR5_DOF);
-  rml_flags.SynchronizationBehavior = RMLPositionFlags::ONLY_TIME_SYNCHRONIZATION;
-  
   for(int i=0; i<UR5_DOF; i++)
   {
     rml_i->CurrentPositionVector->VecData[i] = d->qpos[UR5_jI[i].p];
@@ -385,7 +384,8 @@ void MujocoNode::loop()
     // UR5 joint control
     if(UR5_traj_in)
     {
-      if(!UR5_traj_started) // start new motion
+      // start new motion if not already
+      if(!UR5_traj_started)
       {
         for(int i=0; i<UR5_DOF; i++)
         {
@@ -401,6 +401,7 @@ void MujocoNode::loop()
       *rml_i->CurrentPositionVector = *rml_o->NewPositionVector;
       *rml_i->CurrentVelocityVector = *rml_o->NewVelocityVector;
       *rml_i->CurrentAccelerationVector = *rml_o->NewAccelerationVector;
+      
       // check if finished
       if(rml_result_ == ReflexxesAPI::RML_FINAL_STATE_REACHED)
         { UR5_traj_started = false; UR5_traj_step++; }
@@ -421,7 +422,7 @@ void MujocoNode::loop()
     }
     else
     {
-      // lock joints for gravity compensation
+      // hold positions
       for(int i=0; i<UR5_DOF; i++)
       {
         d->qpos[UR5_jI[i].p] = UR5_jpos.back()[i];
@@ -747,4 +748,3 @@ int main(int argc, char **argv)
   
   return 0;
 }
-

@@ -93,7 +93,7 @@ class MujocoNode
     ~MujocoNode();
       
     void loop();
-  
+
   private:
     // ROS callbacks
     void jpos_cb(const std_msgs::Float32MultiArray& msg);
@@ -111,7 +111,7 @@ class MujocoNode
     void set_grip_weld_relpose(const int& target_bI);
     
     // other
-    void reset_mujoco();
+    void reset_mujoco(bool init);
     
     
     
