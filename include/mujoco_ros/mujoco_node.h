@@ -43,13 +43,13 @@
 
 struct JointIndex
 {
-  int p, v; // position, velocity
+  int I, p,v; // joint number,  position/velocity indices
 };
 
 struct ThreadedConnection
 {
   std::string fastener_name;
-  double pitch; JointIndex tI,rI;
+  double pitch; JointIndex jI[6];
 };
 
 

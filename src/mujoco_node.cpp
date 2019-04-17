@@ -577,74 +577,76 @@ void scroll(GLFWwindow* window, double xoffset, double yoffset)
 
 bool MujocoNode::threadlock_cb(mujoco_ros::ThreadLock::Request& req, mujoco_ros::ThreadLock::Response& res)
 {
-  // joint indices for other axes
-  std::string axisA_, axisB_;
-  if(req.axis == "x") { axisA_ = "y"; axisB_ = "z"; }
-  else if(req.axis == "y") { axisA_ = "x"; axisB_ = "z"; }
-  else if(req.axis == "z") { axisA_ = "x"; axisB_ = "y"; }
-  else { res.ok = false; return true; }
-  
-  std::vector<std::string> other_joint_names_(4); 
-  other_joint_names_[0] = req.fastener_name + "_t" + axisA_;
-  other_joint_names_[1] = req.fastener_name + "_t" + axisB_;
-  other_joint_names_[2] = req.fastener_name + "_r" + axisA_;
-  other_joint_names_[3] = req.fastener_name + "_r" + axisB_; 
-  int other_jointI_[4];
-  for(int i=0; i<4; i++)
-    other_jointI_[i] = mj_name2id(m, mjOBJ_JOINT, other_joint_names_[i].c_str());
-  
   if(req.attach_flag)
   {
-    // append threaded connection
-    std::string tn_ = req.fastener_name + "_t" + req.axis,
-      rn_ = req.fastener_name + "_r" + req.axis;
-    int jtI_ = mj_name2id(m, mjOBJ_JOINT, tn_.c_str()),
-      jrI_ = mj_name2id(m, mjOBJ_JOINT, rn_.c_str());
-    if((jtI_ != -1) && (jrI_ != -1))
+    // all 6 joint names
+    std::string axisA_, axisB_;
+    if(req.axis == "x") { axisA_ = "y"; axisB_ = "z"; }
+    else if(req.axis == "y") { axisA_ = "x"; axisB_ = "z"; }
+    else if(req.axis == "z") { axisA_ = "x"; axisB_ = "y"; }
+    else { res.ok = false; return true; }
+    
+    std::vector<std::string> joint_names_(6);
+    joint_names_[0] = req.fastener_name + "_t" + req.axis;
+    joint_names_[1] = req.fastener_name + "_r" + req.axis;
+    joint_names_[2] = req.fastener_name + "_t" + axisA_;
+    joint_names_[3] = req.fastener_name + "_r" + axisA_;
+    joint_names_[4] = req.fastener_name + "_t" + axisB_;
+    joint_names_[5] = req.fastener_name + "_r" + axisB_;
+    
+    // populate potential connection item
+    ThreadedConnection tc_;
+    tc_.fastener_name = req.fastener_name; tc_.pitch = req.pitch;
+    for(int i=0; i<6; i++)
     {
-      ThreadedConnection tc_;
-      tc_.fastener_name = req.fastener_name; tc_.pitch = req.pitch;
-      tc_.tI.p = m->jnt_qposadr[jtI_]; tc_.tI.v = m->jnt_dofadr[jtI_];
-      tc_.rI.p = m->jnt_qposadr[jrI_]; tc_.rI.v = m->jnt_dofadr[jrI_];
-      threaded_connections.push_back(tc_);
-
-      // lock other joints
-      for(int i=0; i<4; i++)
-        if(other_jointI_[i] != -1)
+      tc_.jI[i].I = mj_name2id(m, mjOBJ_JOINT, joint_names_[i].c_str());
+      if(tc_.jI[i].I != -1)
+      {
+        tc_.jI[i].p = m->jnt_qposadr[tc_.jI[i].I];
+        tc_.jI[i].v = m->jnt_dofadr[tc_.jI[i].I];
+      }
+    }
+    
+    // valid if both joints exist for threading axis
+    if((tc_.jI[0].I != -1) && (tc_.jI[1].I != -1))
+    {
+      // constrain other joints, where present
+      for(int i=2; i<6; i++)
+        if(tc_.jI[i].I != -1)
         {
-          int pI_ = m->jnt_qposadr[other_jointI_[i]];
-          m->jnt_range[2*other_jointI_[i]+0] = d->qpos[pI_] - JNT_LOCK_TOL;
-          m->jnt_range[2*other_jointI_[i]+1] = d->qpos[pI_] + JNT_LOCK_TOL;
-          m->jnt_limited[other_jointI_[i]] = true;
-          int vI_ = m->jnt_dofadr[other_jointI_[i]]; d->qvel[vI_] = 0.0;
+          m->jnt_range[2*tc_.jI[i].I+0] = d->qpos[tc_.jI[i].p] - JNT_LOCK_TOL;
+          m->jnt_range[2*tc_.jI[i].I+1] = d->qpos[tc_.jI[i].p] + JNT_LOCK_TOL;
+          m->jnt_limited[tc_.jI[i].I] = true; d->qvel[tc_.jI[i].v] = 0.0;
         }
+      // append connection, return
+      threaded_connections.push_back(tc_);
+      res.ok = true; return true;
     }
     else { res.ok = false; return true; }
   }
   else
   {
-    // remove threaded connection
     for(size_t i=0; i<threaded_connections.size(); i++)
       if(threaded_connections[i].fastener_name == req.fastener_name)
-        { threaded_connections.erase(threaded_connections.begin()+i); break; }
-    
-    // unlock other joints
-    for(int i=0; i<4; i++)
-      if(other_jointI_[i] != -1)
-        m->jnt_limited[other_jointI_[i]] = false;
+      {
+        // free other joints, where present
+        for(int j=2; j<6; j++)
+          if(threaded_connections[i].jI[j].I != -1)
+            m->jnt_limited[threaded_connections[i].jI[j].I] = false;
+        // erase connection, return
+        threaded_connections.erase(threaded_connections.begin()+i);
+        res.ok = true; return true;
+      }
+    res.ok = false; return true;
   }
-      
-  res.ok = true;
-  
-  return true;
 }
 
 void MujocoNode::handle_threaded_connections()
 {
   for(size_t i=0; i<threaded_connections.size(); i++)
   {
-    d->qvel[threaded_connections[i].tI.v] = d->qvel[threaded_connections[i].rI.v] * threaded_connections[i].pitch;
-    d->qpos[threaded_connections[i].tI.p] += d->qvel[threaded_connections[i].tI.v] * FPS_period;
+    d->qvel[threaded_connections[i].jI[0].v] = d->qvel[threaded_connections[i].jI[1].v] * threaded_connections[i].pitch;
+    d->qpos[threaded_connections[i].jI[0].p] += d->qvel[threaded_connections[i].jI[0].v] * FPS_period;
   }
 }
 
