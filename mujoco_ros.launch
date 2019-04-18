@@ -7,8 +7,9 @@
         start_time: 0.0
         FPS: 60
         
-        grippable_bodies: [ "nut" ]
         ext_cam_name: "ros_cam"
+        free_bodies: [ "base", "nut" ]
+        grippable_bodies: [ "nut" ]
       </rosparam>
       
       <node name="mujoco_sim_node" pkg="mujoco_ros" type="mujoco_node" output="screen" required="true"/>

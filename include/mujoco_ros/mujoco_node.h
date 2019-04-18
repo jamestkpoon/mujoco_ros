@@ -3,7 +3,7 @@
 
 
 
-// ROS
+// ROS comms
 #include "ros/ros.h"
 #include "tf/transform_datatypes.h"
 
@@ -34,15 +34,24 @@
 
 
 
-// threaded manip
-#include "mujoco_ros/ThreadLock.h"
-
-#define JNT_LOCK_TOL 0.005
-
+// free bodies
 struct JointIndex
 {
   int I, p,v; // id,  position/velocity indices
 };
+
+struct FreeBody
+{
+  int bI; tf::Transform tf_pose, tf_defpose;
+  JointIndex jI[6]; bool proc[6];
+};
+
+
+
+// threaded manip
+#include "mujoco_ros/ThreadLock.h"
+
+#define JNT_LOCK_TOL 0.005
 
 struct ThreadedConnection
 {
@@ -101,18 +110,17 @@ class MujocoNode
     void loop();
 
   private:
-    // ROS callbacks
-    void jpos_cb(const std_msgs::Float32MultiArray& msg);
-    void gripper_cb(const std_msgs::Bool& msg);
-    
+    // misc
     bool reset_mujoco_cb(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res);
     bool getpose_cb(mujoco_ros::GetPose::Request& req, mujoco_ros::GetPose::Response& res);
     bool get_brelpose_cb(mujoco_ros::GetRelativePoseBodies::Request& req, mujoco_ros::GetRelativePoseBodies::Response& res);
     
-    // other
-    void reset_mujoco(bool init);
     void free_memory();
-    
+    void get_indexing();
+    void reset_mujoco(bool init);
+
+    void xpose_to_tf(tf::Transform& tf_out, const int bI);
+    void get_relpose(tf::Transform& tf_out, const int abI, const int bbI);
     
     // Mujoco/GLFW
     GLFWwindow* window;
@@ -124,12 +132,15 @@ class MujocoNode
     RMLPositionOutputParameters* rml_o;
     RMLPositionFlags rml_flags;
     
-    // ROS
+    // ROS comms
     ros::NodeHandle nh, ur_nh;
     ros::Subscriber jpos_sub,gri_sub;
     ros::ServiceServer reset_srv, getpose_srv,get_brelpose_srv;
 
     // UR5
+    void jpos_cb(const std_msgs::Float32MultiArray& msg);
+    void handle_UR5();
+    
     double UR5_maxVel, UR5_maxAccel, UR5_maxJerk;
     std::vector<std::vector<double> > UR5_jpos, UR5_jvel;
     int UR5_traj_step, UR5_traj_steps; bool UR5_traj_in, UR5_traj_started;
@@ -137,19 +148,19 @@ class MujocoNode
     ros::Publisher jstate_pub;
     
     // gripper
+    void gripper_cb(const std_msgs::Bool& msg);
+    void handle_gripper();
     bool gripper_check(const int target_gI);
     int gripper_checks();
-    void xpose_to_tf(tf::Transform& tf_out, const int bI);
-    void get_relpose(tf::Transform& tf_out, const int abI, const int bbI);
     void gripper_set_weld_relpose(const int weldI);
     void gripper_lock_default();
         
     double gripper_torque, gripper_driver_min_pos;
     bool gripper_in, gripper_state;
     std::vector<JointIndex> gri_jI;    
-    int gripper_m1I, gripper_m2I, // motors indices
-      gri_l_gI, gri_r_gI, // fingertip geom indices
-      gri_l_weldI,gri_r_weldI, grip_weldI, grippedI; // weld indices
+    int gripper_m1I, gripper_m2I, // motor indices
+      gri_l_gI, gri_r_gI, // fingertip geom indices for grasp contact check
+      gri_l_weldI,gri_r_weldI, grip_weldI, grippedI; // weld equality indices
     double gri_l_defpose[7], gri_r_defpose[7]; // default fingertip poses
     std::vector<std::string> grippable_body_names;
     std::vector<int> grippable_bI, grippable_gI;
@@ -161,6 +172,12 @@ class MujocoNode
     ros::Publisher ext_cam_pub;
     bool ext_cam; std::string ext_cam_name;
     int ext_camI;
+    
+    
+    
+    // free bodies
+    void handle_free_bodies();
+    std::vector<FreeBody> free_bodies;
     
 
 
@@ -178,7 +195,8 @@ class MujocoNode
     bool randomize_physical_cb(mujoco_ros::RandomizePhysicalAttribute::Request& req, mujoco_ros::RandomizePhysicalAttribute::Response& res);
     double rand_clip(const double mean, const double noise, const double lb, const double ub);
     bool rand_childOK(const int cI, const int pI);
-    void rand_proc(); void rand_child_pose_fix(PCtf& pc);
+    void handle_randomization();
+    void rand_child_pose_fix(PCtf& pc);
     
     ros::ServiceServer randtex_srv, randphys_srv;
     std::vector<PCtf> rand_child_fix; bool rand_proc_now;
