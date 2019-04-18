@@ -41,7 +41,7 @@
 
 struct JointIndex
 {
-  int I, p,v; // joint number,  position/velocity indices
+  int I, p,v; // id,  position/velocity indices
 };
 
 struct ThreadedConnection
@@ -66,6 +66,12 @@ double rand_pm1()
 {
   return 2*rand_01() - 1.0;
 }
+
+struct PCtf
+{
+  tf::Transform world_p, world_c;
+  int p_bI, jpI[6],jvI[6];
+};
 
 
 
@@ -103,16 +109,9 @@ class MujocoNode
     bool getpose_cb(mujoco_ros::GetPose::Request& req, mujoco_ros::GetPose::Response& res);
     bool get_brelpose_cb(mujoco_ros::GetRelativePoseBodies::Request& req, mujoco_ros::GetRelativePoseBodies::Response& res);
     
-    // gripper
-    bool checkGrip(const int& target_gI);
-    int checkGrips();
-    void xpose_to_tf(tf::Transform& tf_out, const int& bI);
-    void get_relpose(tf::Transform& tf_out, const int& baI, const int& bbI);
-    void set_grip_weld_relpose(const int& target_bI);
-    
     // other
     void reset_mujoco(bool init);
-    
+    void free_memory();
     
     
     // Mujoco/GLFW
@@ -136,17 +135,27 @@ class MujocoNode
     int UR5_traj_step, UR5_traj_steps; bool UR5_traj_in, UR5_traj_started;
     std::vector<JointIndex> UR5_jI;
     ros::Publisher jstate_pub;
-    // gripper    
+    
+    // gripper
+    bool gripper_check(const int target_gI);
+    int gripper_checks();
+    void xpose_to_tf(tf::Transform& tf_out, const int bI);
+    void get_relpose(tf::Transform& tf_out, const int abI, const int bbI);
+    void gripper_set_weld_relpose(const int weldI);
+    void gripper_lock_default();
+        
     double gripper_torque, gripper_driver_min_pos;
     bool gripper_in, gripper_state;
     std::vector<JointIndex> gri_jI;    
-    int gripper_m1I,gripper_m2I, gri_l_gI, gri_r_gI,
-      lfinger_eqI,rfinger_eqI, grippedI, grip_weldI;
+    int gripper_m1I, gripper_m2I, // motors indices
+      gri_l_gI, gri_r_gI, // fingertip geom indices
+      gri_l_weldI,gri_r_weldI, grip_weldI, grippedI; // weld indices
+    double gri_l_defpose[7], gri_r_defpose[7]; // default fingertip poses
     std::vector<std::string> grippable_body_names;
     std::vector<int> grippable_bI, grippable_gI;
     
     // streaming RGB camera
-    void fill_rgb_image_msg(sensor_msgs::Image& msg, const unsigned char* buf, const int& buf_sz);
+    void fill_rgb_image_msg(sensor_msgs::Image& msg, const unsigned char* buf, const int buf_sz);
     void publish_cam_rgb(mjrRect& viewport);
   
     ros::Publisher ext_cam_pub;
@@ -167,9 +176,12 @@ class MujocoNode
     // randomization
     bool randomize_textural_cb(mujoco_ros::RandomizeTexturalAttribute::Request& req, mujoco_ros::RandomizeTexturalAttribute::Response& res);
     bool randomize_physical_cb(mujoco_ros::RandomizePhysicalAttribute::Request& req, mujoco_ros::RandomizePhysicalAttribute::Response& res);
-    double randomize_with_noise_01(const double& mean, const double& noise);
+    double rand_clip(const double mean, const double noise, const double lb, const double ub);
+    bool rand_childOK(const int cI, const int pI);
+    void rand_proc(); void rand_child_pose_fix(PCtf& pc);
     
     ros::ServiceServer randtex_srv, randphys_srv;
+    std::vector<PCtf> rand_child_fix; bool rand_proc_now;
 };
 
 

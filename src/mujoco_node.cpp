@@ -170,7 +170,7 @@ bool MujocoNode::get_brelpose_cb(mujoco_ros::GetRelativePoseBodies::Request& req
 
 //// gripper functions
 
-bool MujocoNode::checkGrip(const int& target_gI)
+bool MujocoNode::gripper_check(const int target_gI)
 {
   bool lcon_ = false, rcon_ = false;
   for(int i=0; i<d->ncon; i++)
@@ -184,37 +184,50 @@ bool MujocoNode::checkGrip(const int& target_gI)
   return (lcon_ && rcon_);
 }
 
-int MujocoNode::checkGrips()
+int MujocoNode::gripper_checks()
 {
   for(int i=0; i<(int)grippable_gI.size(); i++)
-    if(checkGrip(grippable_gI[i])) return i;
+    if(gripper_check(grippable_gI[i])) return i;
     
   return -1;
 }
 
-void MujocoNode::xpose_to_tf(tf::Transform& tf_out, const int& bI)
+void MujocoNode::xpose_to_tf(tf::Transform& tf_out, const int bI)
 {
   tf_out.setOrigin(tf::Vector3(d->xpos[3*bI+0], d->xpos[3*bI+1], d->xpos[3*bI+2]));
   tf_out.setRotation(tf::Quaternion(d->xquat[4*bI+1], d->xquat[4*bI+2], d->xquat[4*bI+3], d->xquat[4*bI+0]));
 }
 
-void MujocoNode::get_relpose(tf::Transform& tf_out, const int& baI, const int& bbI)
+void MujocoNode::get_relpose(tf::Transform& tf_out, const int abI, const int bbI)
 {
-  tf::Transform ba_tf_, bb_tf_; xpose_to_tf(ba_tf_, baI); xpose_to_tf(bb_tf_, bbI);
-  tf_out = ba_tf_.inverse() * bb_tf_;
+  tf::Transform ab_tf_, bb_tf_; xpose_to_tf(ab_tf_, abI); xpose_to_tf(bb_tf_, bbI);
+  tf_out = ab_tf_.inverse() * bb_tf_;
 }
 
-void MujocoNode::set_grip_weld_relpose(const int& target_bI)
+void MujocoNode::gripper_set_weld_relpose(const int weldI)
 {
-  tf::Transform relpose_; get_relpose(relpose_, m->eq_obj1id[grip_weldI], target_bI);
+  tf::Transform relpose_; get_relpose(relpose_, m->eq_obj1id[weldI],m->eq_obj2id[weldI]);
 
-  m->eq_data[7*grip_weldI+0] = relpose_.getOrigin()[0];
-  m->eq_data[7*grip_weldI+1] = relpose_.getOrigin()[1];
-  m->eq_data[7*grip_weldI+2] = relpose_.getOrigin()[2];
-  m->eq_data[7*grip_weldI+3] = relpose_.getRotation()[3];
-  m->eq_data[7*grip_weldI+4] = relpose_.getRotation()[0];
-  m->eq_data[7*grip_weldI+5] = relpose_.getRotation()[1];
-  m->eq_data[7*grip_weldI+6] = relpose_.getRotation()[2];
+  m->eq_data[7*weldI+0] = relpose_.getOrigin()[0];
+  m->eq_data[7*weldI+1] = relpose_.getOrigin()[1];
+  m->eq_data[7*weldI+2] = relpose_.getOrigin()[2];
+  m->eq_data[7*weldI+3] = relpose_.getRotation()[3];
+  m->eq_data[7*weldI+4] = relpose_.getRotation()[0];
+  m->eq_data[7*weldI+5] = relpose_.getRotation()[1];
+  m->eq_data[7*weldI+6] = relpose_.getRotation()[2];
+  
+  m->eq_active[weldI] = true;
+}
+
+void MujocoNode::gripper_lock_default()
+{
+  for(int i=0; i<7; i++)
+  {
+      m->eq_data[7*gri_l_weldI+i] = gri_l_defpose[i];
+      m->eq_data[7*gri_r_weldI+i] = gri_r_defpose[i];   
+  }
+  
+  m->eq_active[gri_l_weldI] = m->eq_active[gri_r_weldI] = true;
 }
 
 
@@ -222,7 +235,7 @@ void MujocoNode::set_grip_weld_relpose(const int& target_bI)
 //// streaming RGB camera
 
 void MujocoNode::fill_rgb_image_msg(sensor_msgs::Image& msg,
-  const unsigned char* buf, const int& buf_sz)
+  const unsigned char* buf, const int buf_sz)
 {
   // other data fields
   msg.header.stamp = ros::Time::now();
@@ -275,15 +288,22 @@ void MujocoNode::publish_cam_rgb(mjrRect& viewport)
 
 void MujocoNode::reset_mujoco(bool init)
 {
+  if(!init) free_memory(); // free for re-allocation
+  
   //// MuJoCo
   
-  // load model
-  if(!init) { mj_deleteModel(m); mj_deleteData(d); }
-  
+  // load model  
   std::string mujoco_xml_; nh.getParam("xml", mujoco_xml_);
   char error[1000];  
   m = mj_loadXML(mujoco_xml_.c_str(), NULL, error, 1000);
   d = mj_makeData(m);
+
+  // create scene and context
+  mjv_defaultCamera(&cam); mjv_defaultOption(&opt);
+  mjv_defaultScene(&scn);
+  mjr_defaultContext(&con);  
+  mjv_makeScene(m, &scn, 2000);
+  mjr_makeContext(m, &con, mjFONTSCALE_150);
   
   if(init)
   {
@@ -304,12 +324,17 @@ void MujocoNode::reset_mujoco(bool init)
     gripper_m2I = mj_name2id(m, mjOBJ_ACTUATOR, "gripper_close_2");
     gri_l_gI = mj_name2id(m, mjOBJ_GEOM, "left_follower_mesh"); // gripper finger geoms
     gri_r_gI = mj_name2id(m, mjOBJ_GEOM, "right_follower_mesh");
-    lfinger_eqI = mj_name2id(m, mjOBJ_EQUALITY, "lfinger_lock"); // gripper finger welds
-    rfinger_eqI = mj_name2id(m, mjOBJ_EQUALITY, "rfinger_lock");
+    grip_weldI = mj_name2id(m, mjOBJ_EQUALITY, "grip_"); // gripper welds
+    gri_l_weldI = mj_name2id(m, mjOBJ_EQUALITY, "lfinger_lock");
+    gri_r_weldI = mj_name2id(m, mjOBJ_EQUALITY, "rfinger_lock");
+    for(int i=0; i<7; i++)
+    {
+      gri_l_defpose[i] = m->eq_data[7*gri_l_weldI+i];
+      gri_r_defpose[i] = m->eq_data[7*gri_r_weldI+i];
+    }
 
     nh.getParam("grippable_bodies", grippable_body_names);
-    size_t n_grip_bodies_ = grippable_body_names.size();
-    grippedI = -1; grip_weldI = mj_name2id(m, mjOBJ_EQUALITY, "grip_");
+    size_t n_grip_bodies_ = grippable_body_names.size(); 
     grippable_bI.resize(n_grip_bodies_); grippable_gI.resize(n_grip_bodies_);
     for(size_t i=0; i<n_grip_bodies_; i++)
     {
@@ -319,10 +344,13 @@ void MujocoNode::reset_mujoco(bool init)
     }
   }
   
+  
+  
   // lock gripper
   gripper_in = false; gripper_state = false;
-  m->eq_active[lfinger_eqI] = m->eq_active[rfinger_eqI] = true;
-  ur_nh.setParam("gripped_object", "");
+  gripper_lock_default();
+  grippedI = -1; ur_nh.setParam("gripped_object", "");
+  
   // move UR5 to initial pose
   UR5_traj_in = false; UR5_traj_started = false;
   std_msgs::Float32MultiArray initial_joint_pose_;
@@ -334,22 +362,11 @@ void MujocoNode::reset_mujoco(bool init)
     d->qvel[UR5_jI[i].v] = 0.0;
   }
   jpos_cb(initial_joint_pose_);
+  
   // "settle" the simulation
   double settle_time_; nh.getParam("start_time", settle_time_);
   while(d->time < settle_time_) mj_step(m, d);
- 
-
-
-  //// GLFW
-  if(init) { mjv_defaultCamera(&cam); mjv_defaultOption(&opt); }
-  else { mjv_freeScene(&scn); mjr_freeContext(&con); }
-
-  // create scene and context
-  mjv_defaultScene(&scn);
-  mjr_defaultContext(&con);  
-  mjv_makeScene(m, &scn, 2000);
-  mjr_makeContext(m, &con, mjFONTSCALE_150);
-  
+    
   
   
   //// Reflexxes
@@ -372,16 +389,20 @@ void MujocoNode::reset_mujoco(bool init)
   
   //// threaded manip
   threaded_connections.clear();
+  
+  //// randomization
+  rand_child_fix.clear(); rand_proc_now = false;  
 }
 
 void MujocoNode::loop()
 {
   while(!glfwWindowShouldClose(window) && ros::ok())
   {
-    // ROS
-    ros::spinOnce();  
+    //// ROS
+    ros::spinOnce();    
     
-    // UR5 joint control
+    //// UR5
+    
     if(UR5_traj_in)
     {
       // start new motion if not already
@@ -440,10 +461,13 @@ void MujocoNode::loop()
     }
     jstate_pub.publish(UR5_jstate_out_);
     
-    // gripper control
+    
+    
+    //// gripper
+    
     if(gripper_state != gripper_in)
     {
-      m->eq_active[lfinger_eqI] = m->eq_active[rfinger_eqI] = false;
+      m->eq_active[gri_l_weldI] = m->eq_active[gri_r_weldI] = false;
       if(gripper_in) d->ctrl[gripper_m1I] = d->ctrl[gripper_m2I] = gripper_torque; // close
       else d->ctrl[gripper_m1I] = d->ctrl[gripper_m2I] = -gripper_torque; // open
         
@@ -454,14 +478,15 @@ void MujocoNode::loop()
     {
       if(grippedI == -1)
       {
-        grippedI = checkGrips();
+        grippedI = gripper_checks();
         if(grippedI != -1)
         {
-          // set grip weld
-          set_grip_weld_relpose(grippable_bI[grippedI]);
+          // lock fingertips
+          gripper_set_weld_relpose(gri_l_weldI);
+          gripper_set_weld_relpose(gri_r_weldI);
+          // set object grip weld + rosparam
           m->eq_obj2id[grip_weldI] = grippable_bI[grippedI];
-          m->eq_active[grip_weldI] = true;
-          // set gripped object rosparam
+          gripper_set_weld_relpose(grip_weldI);
           ur_nh.setParam("gripped_object", grippable_body_names[grippedI]);
         }
       }
@@ -470,21 +495,29 @@ void MujocoNode::loop()
     {
       if(grippedI != -1)
       {
-        m->eq_active[grip_weldI] = false;
-        grippedI = -1; ur_nh.setParam("gripped_object", "");
+        m->eq_active[grip_weldI] = false; grippedI = -1;
+        ur_nh.setParam("gripped_object", "");
       }
-        
+      
       if(std::min(d->qpos[gri_jI[0].p], d->qpos[gri_jI[1].p]) <= gripper_driver_min_pos)
       {
         d->ctrl[gripper_m1I] = d->ctrl[gripper_m2I] = 0.0;
-        m->eq_active[lfinger_eqI] = m->eq_active[rfinger_eqI] = true;
+        if(!m->eq_active[gri_l_weldI]) gripper_lock_default();
       }
     }
     
-    // threaded manip
+    
+    
+    //// threaded manip
     handle_threaded_connections();
+
+    //// randomization
+    rand_proc();
+    
+    
       
-    // update MuJoCo
+    //// update sim
+    
     mjtNum simstart = d->time;
     while( d->time - simstart < FPS_period ) mj_step(m, d);    
     
@@ -500,14 +533,12 @@ void MujocoNode::loop()
     // swap OpenGL buffers (blocking call due to v-sync)
     glfwSwapBuffers(window);
     // process pending GUI events, call GLFW callbacks
-    glfwPollEvents();
+    glfwPollEvents();   
   }
 }
 
-MujocoNode::~MujocoNode()
+void MujocoNode::free_memory()
 {
-  //// MuJoCo/Reflexxes cleanup
-
   // free visualization storage
   mjv_freeScene(&scn);
   mjr_freeContext(&con);
@@ -515,13 +546,20 @@ MujocoNode::~MujocoNode()
   // free model and data, deactivate
   mj_deleteData(d);
   mj_deleteModel(m);
+}
+
+MujocoNode::~MujocoNode()
+{  
+  free_memory();
+
+  // deactivate Mujoco session
   mj_deactivate();
 
   // close window, stop GLFW
   if(!glfwWindowShouldClose(window)) glfwSetWindowShouldClose(window, GLFW_TRUE);
   glfwTerminate();
   
-  // Reflexxes resources
+  // free Reflexxes resources
   delete rml_api; delete rml_i; delete rml_o;
 }
 
@@ -673,12 +711,12 @@ bool MujocoNode::randomize_textural_cb(mujoco_ros::RandomizeTexturalAttribute::R
       if(matI_ != -1)
       {
         // req.noise: [ emission*1, specular*1, shininess*1, reflectance*1, rgba*4 ] * N_material_names
-        m->mat_emission[matI_] = randomize_with_noise_01(m->mat_emission[matI_], req.noise[8*i+0]);
-        m->mat_specular[matI_] = randomize_with_noise_01(m->mat_specular[matI_], req.noise[8*i+1]);
-        m->mat_shininess[matI_] = randomize_with_noise_01(m->mat_shininess[matI_], req.noise[8*i+2]);
-        m->mat_reflectance[matI_] = randomize_with_noise_01(m->mat_reflectance[matI_], req.noise[8*i+3]);
+        m->mat_emission[matI_] = rand_clip(m->mat_emission[matI_], req.noise[8*i+0], 0.0,1.0);
+        m->mat_specular[matI_] = rand_clip(m->mat_specular[matI_], req.noise[8*i+1], 0.0,1.0);
+        m->mat_shininess[matI_] = rand_clip(m->mat_shininess[matI_], req.noise[8*i+2], 0.0,1.0);
+        m->mat_reflectance[matI_] = rand_clip(m->mat_reflectance[matI_], req.noise[8*i+3], 0.0,1.0);
         for(int i=0; i<4; i++)
-          m->mat_rgba[4*matI_+i] = randomize_with_noise_01(m->mat_rgba[4*matI_+i], req.noise[8*i+4+i]);
+          m->mat_rgba[4*matI_+i] = rand_clip(m->mat_rgba[4*matI_+i], req.noise[8*i+4+i], 0.0,1.0);
           
         res.ok.push_back(true);
       }
@@ -688,57 +726,118 @@ bool MujocoNode::randomize_textural_cb(mujoco_ros::RandomizeTexturalAttribute::R
   return true;
 }
 
-double MujocoNode::randomize_with_noise_01(const double& mean, const double& noise)
+double MujocoNode::rand_clip(const double mean, const double noise, const double lb, const double ub)
 {
-  if(mean == 0.0) return noise * rand_01();
-  else if(mean == 1.0) return 1.0 - (noise * rand_01());
-  else return std::max(0.0, std::min(mean + (noise * rand_pm1()), 1.0));
+  if(mean == lb) return lb + (noise * rand_01());
+  else if(mean == ub) return ub - (noise * rand_01());
+  else return std::max(lb, std::min(mean + (noise * rand_pm1()), ub));
 }
 
 bool MujocoNode::randomize_physical_cb(mujoco_ros::RandomizePhysicalAttribute::Request& req, mujoco_ros::RandomizePhysicalAttribute::Response& res)
 {
   res.ok.clear();
   
-  if(req.noise.size() == 6*req.body_names.size())
-    for(int i=0; i<(int)req.body_names.size(); i++)
+  // get body indices, check joint data lengths
+  int nb_ = (int)req.body_names.size(), bI_[nb_], nj_cumsum_=0;
+  for(int i=0; i<nb_; i++)
+  {
+    bI_[i] = mj_name2id(m, mjOBJ_BODY, req.body_names[i].c_str());
+    if(bI_[i] != -1) nj_cumsum_ += m->body_jntnum[bI_[i]];
+    else return true; 
+  }
+  
+  // randomize if total lengths match
+  if((nj_cumsum_ == (int)req.noise.size()) && (nb_ == (int)req.hold_6dof_children.size()))
+  {
+    // bodies
+    int noiseI_ = 0;
+    for(int i=0; i<nb_; i++)
     {
-      int bI_ = mj_name2id(m, mjOBJ_BODY, req.body_names[i].c_str());
-      if(bI_ != -1)
-      {      
-        // req.noise: [ translation*3, euler*3 ] * N_body_names        
-        JointIndex jI_[6]; bool jI_ok_ = true;
-        jI_[0].I = mj_name2id(m, mjOBJ_JOINT, (req.body_names[i]+"_tx").c_str());
-        jI_[1].I = mj_name2id(m, mjOBJ_JOINT, (req.body_names[i]+"_ty").c_str());
-        jI_[2].I = mj_name2id(m, mjOBJ_JOINT, (req.body_names[i]+"_tz").c_str());
-        jI_[3].I = mj_name2id(m, mjOBJ_JOINT, (req.body_names[i]+"_rx").c_str());
-        jI_[4].I = mj_name2id(m, mjOBJ_JOINT, (req.body_names[i]+"_ry").c_str());
-        jI_[5].I = mj_name2id(m, mjOBJ_JOINT, (req.body_names[i]+"_rz").c_str());
-        for(int j=0; j<6; j++)
-          if(jI_[j].I != -1)
-          {
-            jI_[j].p = m->jnt_qposadr[jI_[j].I];
-            jI_[j].v = m->jnt_dofadr[jI_[j].I];
-          }
-          else { jI_ok_ = false; break; }
-         
-        if(jI_ok_)
+      if(m->body_jntnum[bI_[i]] == 0) res.ok.push_back(false);
+      else
+      {
+        res.ok.push_back(true);
+        JointIndex jI_; jI_.I = m->body_jntadr[bI_[i]];
+        for(int j=0; j<m->body_jntnum[bI_[i]]; j++)
         {
-          for(int j=0; j<6; j++)
-          {
-            d->qpos[jI_[j].p] += req.noise[6*i+j] * rand_pm1();
-            d->qvel[jI_[j].v] = 0.0; 
-          }
+          jI_.p = m->jnt_qposadr[jI_.I+j]; jI_.v = m->jnt_dofadr[jI_.I+j];
+          d->qpos[jI_.p] += req.noise[noiseI_++] * rand_pm1();
+          d->qvel[jI_.v] = 0.0;
         }
-        
-        res.ok.push_back(jI_ok_);
       }
-      else res.ok.push_back(false);
     }
+    
+    // children, assumes 6 joints [ tx,ty,tz, rx,ry,rz ]
+    rand_child_fix.clear();
+    for(int p=0; p<nb_; p++)
+      if(req.hold_6dof_children[p])
+      {
+        for(int b=0; b<m->nbody; b++)
+          if(rand_childOK(b, bI_[p]))
+          {
+            PCtf pc_;
+            pc_.p_bI = m->body_parentid[b]; // parent body index
+            xpose_to_tf(pc_.world_c, b); // child pose wrt world
+            for(int j=0; j<6; j++) // child joint indices
+            {
+              pc_.jpI[j] = m->jnt_qposadr[m->body_jntadr[b]+j];
+              pc_.jvI[j] = m->jnt_dofadr[m->body_jntadr[b]+j];
+            }
+            
+            rand_child_fix.push_back(pc_);
+          }
+      }
+  }
   
   return true;
 }
 
+bool MujocoNode::rand_childOK(const int cI, const int pI)
+{
+  bool lineage_ = false; int pI_ = cI;
+  while(pI_ != 0)
+  {
+    pI_ = m->body_parentid[pI_];
+    if(pI_ == pI) { lineage_ = true; break; }
+  }
+  
+  return (lineage_ && (m->body_jntnum[cI] == 6));
+}
 
+void MujocoNode::rand_proc()
+{
+  if(!rand_child_fix.empty())
+    if(rand_proc_now)
+    {
+      for(size_t i=0; i<rand_child_fix.size(); i++)
+        rand_child_pose_fix(rand_child_fix[i]);
+      rand_child_fix.clear(); rand_proc_now = false;
+    }
+    else rand_proc_now = true;
+}
+
+void MujocoNode::rand_child_pose_fix(PCtf& pc)
+{
+  // relative p->c pose
+  xpose_to_tf(pc.world_p, pc.p_bI);
+  tf::Transform rp_tf_ = pc.world_p.inverse() * pc.world_c;
+  // euler rotation
+  tf::Matrix3x3 m_(rp_tf_.getRotation());
+  double eul_[3]; m_.getRPY(eul_[0], eul_[1], eul_[2]);
+  
+  // adjust child joint positions
+  for(int i=0; i<3; i++)
+  {
+    d->qpos[pc.jpI[i]] = rp_tf_.getOrigin()[i]; // slide joint
+    d->qpos[pc.jpI[3+i]] = eul_[i]; // hinge joint
+  }
+  // zero child joint velocities
+  for(int j=0; j<6; j++) d->qvel[pc.jvI[j]] = 0.0;
+}
+
+
+
+//// main
 
 int main(int argc, char **argv)
 {
