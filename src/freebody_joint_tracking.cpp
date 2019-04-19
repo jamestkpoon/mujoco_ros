@@ -45,15 +45,15 @@ void FreeBodyTracker::proc(mjModel* m, mjData* d)
 {
   for(int b=0; b<N_FB; b++)
   {
-    // starting child pose wrt new parent pose
+    // new parent pose -> starting child pose
     tf::Transform w_p_tf_; xpose_to_tf(m,d, w_p_tf_, free_bodies[b].pbI);
     tf::Transform p_dc_tf_ = w_p_tf_.inverse() * free_bodies[b].defpose;
     std::vector<double> p_dc_tup_; transform_to_6tuple(p_dc_tup_, p_dc_tf_);
-    // new child pose wrt new parent pose
+    // new parent pose -> new child pose
     std::vector<double> p_nc_tup_;
     rel_pose_as_tuple(m,d, p_nc_tup_, free_bodies[b].pbI,free_bodies[b].bI);
     
-    // joint differential tuple for velocities
+    // local differential tuple for joint velocities
     double diff_[6];
     for(int i=0; i<6; i++)
       diff_[i] = p_nc_tup_[i] - free_bodies[b].last_pc_tup[i];

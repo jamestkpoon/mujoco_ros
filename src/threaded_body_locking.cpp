@@ -26,6 +26,7 @@ void ThreadedBodyLocker::proc(mjModel* m, mjData* d,
     handle_request(m,d, fb_tracker, srv_requests[i]); 
   srv_requests.clear();
   
+  // handle connections
   
 }
 
