@@ -2,15 +2,18 @@
 
 MujocoNode::MujocoNode()
 {
-  // UR5 constants from Vrep
-  UR5_maxVel =  180 * (M_PI/180); UR5_maxAccel = 40 * (M_PI/180); UR5_maxJerk = 80 * (M_PI/180);
-  // gripper constants
-  gripper_torque = 1.0; gripper_driver_min_pos = 0.05;
-
-  // sim FPS
+  // simulation frequency
   int fps_; nh.getParam("FPS", fps_); FPS_period = 1.0 / fps_;
   
-   
+  // UR5 + gripper
+  robot_nh = ros::NodeHandle("ur5");
+  ur5 = new UR5(robot_nh, FPS_period);
+  gripper = new Gripper(robot_nh);
+  
+  // other "modules"
+  fb_tracker = new FreeBodyTracker();
+  
+  
 
   // initialize GLFW
   glfwInit();
@@ -25,23 +28,14 @@ MujocoNode::MujocoNode()
   glfwSetMouseButtonCallback(window, mouse_button);
   glfwSetScrollCallback(window, scroll);
 
-  // initialize Reflexxes
-  rml_api = new ReflexxesAPI(UR5_DOF, FPS_period);
-  rml_i = new RMLPositionInputParameters(UR5_DOF);
-  rml_o = new RMLPositionOutputParameters(UR5_DOF);
-  rml_flags.SynchronizationBehavior = RMLPositionFlags::ONLY_TIME_SYNCHRONIZATION;
+
 
   // activate MuJoCo, initialize
   std::string mujoco_key_; nh.getParam("key", mujoco_key_);
   mj_activate(mujoco_key_.c_str());
-  reset_mujoco(true);     
-
-  // ROS comms  
-  ur_nh = ros::NodeHandle("ur5");
-  jpos_sub = ur_nh.subscribe("command/joint_positions", 1, &MujocoNode::jpos_cb, this);
-  gri_sub = ur_nh.subscribe("command/gripper", 1, &MujocoNode::gripper_cb, this);
+  reset();     
   
-  jstate_pub = ur_nh.advertise<std_msgs::Float32MultiArray>("sensors/joint_state", 1);
+
   
   reset_srv = nh.advertiseService("reset", &MujocoNode::reset_mujoco_cb, this);
 //    getpose_srv = nh.advertiseService("get_object_pose", &MujocoNode::getpose_cb, this);
@@ -68,7 +62,7 @@ MujocoNode::MujocoNode()
 
 MujocoNode::~MujocoNode()
 {  
-  free_memory();
+  free_mujoco_memory();
 
   // deactivate Mujoco session
   mj_deactivate();
@@ -76,78 +70,15 @@ MujocoNode::~MujocoNode()
   // close window, stop GLFW
   if(!glfwWindowShouldClose(window)) glfwSetWindowShouldClose(window, GLFW_TRUE);
   glfwTerminate();
-  
-  // free Reflexxes resources
-  delete rml_api; delete rml_i; delete rml_o;
+ 
+  // free other things
+  delete ur5; delete gripper;
+  delete fb_tracker;
 }
 
 
 
-//// general ROS callbacks
-
-bool MujocoNode::reset_mujoco_cb(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res)
-{
-  reset_mujoco(false);
-  
-  return true;
-}
-
-bool MujocoNode::getpose_cb(mujoco_ros::GetPose::Request& req, mujoco_ros::GetPose::Response& res)
-{
-  int type_ = -1;
-  if(req.type == "body") type_ = mjOBJ_BODY;
-  else if(req.type == "geom") type_ = mjOBJ_GEOM;
-  else if(req.type == "site") type_ = mjOBJ_SITE;
-  else return true;
-  
-  int I_ = mj_name2id(m, type_, req.name.c_str());
-  if(I_ != -1)
-  {
-    // copy sub-parts of position and rotation matrices
-    res.pos.resize(3); res.rot.resize(9);
-    
-    if(type_ == mjOBJ_BODY)
-    {
-      for(int i=0; i<3; i++) res.pos[i] = d->xpos[3*I_+i];
-      for(int i=0; i<9; i++) res.rot[i] = d->xmat[9*I_+i];
-    }
-    else if(type_ == mjOBJ_GEOM)
-    {
-      for(int i=0; i<3; i++) res.pos[i] = d->geom_xpos[3*I_+i];
-      for(int i=0; i<9; i++) res.rot[i] = d->geom_xmat[9*I_+i];
-    }
-    else if(type_ == mjOBJ_SITE)
-    {
-      for(int i=0; i<3; i++) res.pos[i] = d->site_xpos[3*I_+i];
-      for(int i=0; i<9; i++) res.rot[i] = d->site_xmat[9*I_+i];
-    }
-  }
-  else { res.pos.clear(); res.rot.clear(); }
-
-  return true;
-}
-
-bool MujocoNode::get_brelpose_cb(mujoco_ros::GetRelativePoseBodies::Request& req,
-  mujoco_ros::GetRelativePoseBodies::Response& res)
-{
-  int baI_ = mj_name2id(m, mjOBJ_BODY, req.bodyA_name.c_str()),
-    bbI_ = mj_name2id(m, mjOBJ_BODY, req.bodyB_name.c_str());
-
-  if((baI_ != -1) && (bbI_ != -1))
-  {
-    tf::Transform tfo_; get_relpose(tfo_, baI_,bbI_); tf::poseTFToMsg(tfo_, res.relpose);
-    res.ok = true;
-  }
-  else res.ok = false;
-
-  return true;
-}
-
-
-
-//// general functions
-
-void MujocoNode::free_memory()
+void MujocoNode::free_mujoco_memory()
 {
   // free visualization storage
   mjv_freeScene(&scn);
@@ -159,72 +90,17 @@ void MujocoNode::free_memory()
 }
 
 void MujocoNode::get_indexing()
-{
-  // UR5
-  UR5_jI.resize(UR5_DOF);
-  for(int i=0; i<UR5_DOF; i++)
-  {
-    std::string jn_ = "joint" + boost::lexical_cast<std::string>(i+1);
-    int i_ = mj_name2id(m, mjOBJ_JOINT, jn_.c_str());
-    UR5_jI[i].p = m->jnt_qposadr[i_]; UR5_jI[i].v = m->jnt_dofadr[i_];
-  }
-  
-  // gripper
-  gri_jI.resize(2);
-  gri_jI[0].p = m->jnt_qposadr[mj_name2id(m, mjOBJ_JOINT, "joint7_1")]; // joint pos
-  gri_jI[1].p = m->jnt_qposadr[mj_name2id(m, mjOBJ_JOINT, "joint7_2")];
-  gripper_m1I = mj_name2id(m, mjOBJ_ACTUATOR, "gripper_close_1"); // motors
-  gripper_m2I = mj_name2id(m, mjOBJ_ACTUATOR, "gripper_close_2");
-  gri_l_gI = mj_name2id(m, mjOBJ_GEOM, "left_follower_mesh"); // fingertip geoms
-  gri_r_gI = mj_name2id(m, mjOBJ_GEOM, "right_follower_mesh");
-  grip_weldI = mj_name2id(m, mjOBJ_EQUALITY, "grip_"); // welds
-  gri_l_weldI = mj_name2id(m, mjOBJ_EQUALITY, "lfinger_lock");
-  gri_r_weldI = mj_name2id(m, mjOBJ_EQUALITY, "rfinger_lock");
-  for(int i=0; i<7; i++)
-  {
-    gri_l_defpose[i] = m->eq_data[7*gri_l_weldI+i];
-    gri_r_defpose[i] = m->eq_data[7*gri_r_weldI+i];
-  }
+{  
 
-  nh.getParam("grippable_bodies", grippable_body_names);
-  size_t n_grip_bodies_ = grippable_body_names.size(); 
-  grippable_bI.resize(n_grip_bodies_); grippable_gI.resize(n_grip_bodies_);
-  for(size_t i=0; i<n_grip_bodies_; i++)
-  {
-    // bodies for welding, geoms for collision checking
-    grippable_bI[i] = mj_name2id(m, mjOBJ_BODY, grippable_body_names[i].c_str());
-    grippable_gI[i] = mj_name2id(m, mjOBJ_GEOM, (grippable_body_names[i]+"_geom").c_str());
-  }
+
   
   
   
-  // free bodies
-  std::vector<std::string> free_body_names_; nh.getParam("free_bodies", free_body_names_);
-  size_t n_free_bodies_ = free_body_names_.size(); free_bodies.clear();
-  for(size_t i=0; i<n_free_bodies_; i++)
-  {
-    int bI_ = mj_name2id(m, mjOBJ_BODY, free_body_names_[i].c_str());
-    if((bI_ != -1) && (m->body_jntnum[bI_] == 6))
-    {
-      FreeBody fb_;
-      fb_.bI = bI_; xpose_to_tf(fb_.tf_defpose, bI_);
-      for(int j=0; j<6; j++)
-      {
-        fb_.jI[j].I = m->body_jntadr[bI_] + j; 
-        fb_.jI[j].p = m->jnt_qposadr[fb_.jI[j].I];
-        fb_.jI[j].v = m->jnt_dofadr[fb_.jI[j].I];
-        fb_.proc[j] = true;
-      }
-      
-      free_bodies.push_back(fb_);
-    }
-  }
+
 }
 
-void MujocoNode::reset_mujoco(bool init)
+void MujocoNode::reset()
 {
-  if(!init) free_memory(); // free for re-allocation
-  
   //// MuJoCo
   
   // load model  
@@ -239,62 +115,66 @@ void MujocoNode::reset_mujoco(bool init)
   mjr_defaultContext(&con);  
   mjv_makeScene(m, &scn, 2000);
   mjr_makeContext(m, &con, mjFONTSCALE_150);
+
+  // step the simulation to start time
   
-  // indexing
-  if(init) get_indexing();
+  mj_step(m, d); // at least once ?
   
-  
-  
-  //// initial positioning of UR5 and gripper
-  
-  // lock gripper
-  gripper_in = false; gripper_state = false;
-  gripper_lock_default();
-  grippedI = -1; ur_nh.setParam("gripped_object", "");
-  
-  // move UR5 to initial pose
-  UR5_traj_in = false; UR5_traj_started = false;
-  std_msgs::Float32MultiArray initial_joint_pose_;
-  initial_joint_pose_.data = std::vector<float>(UR5_DOF, 0.0);
-  initial_joint_pose_.data[1] = -M_PI/2;
-  for(int i=0; i<UR5_DOF; i++)
-  {
-    d->qpos[UR5_jI[i].p] = initial_joint_pose_.data[i];
-    d->qvel[UR5_jI[i].v] = 0.0;
-  }
-  jpos_cb(initial_joint_pose_);
-  
-  // "settle" the simulation
   double settle_time_; nh.getParam("start_time", settle_time_);
-  while(d->time < settle_time_) mj_step(m, d);
-    
+  while(d->time < settle_time_) mj_step(m, d); 
   
   
-  //// Reflexxes  
-  for(int i=0; i<UR5_DOF; i++)
+  
+  //// UR5 + gripper
+  
+  // UR5 indexing
+  std::vector<std::string> ur5_joint_names_(6);
+  for(int i=0; i<6; i++)
   {
-    rml_i->CurrentPositionVector->VecData[i] = d->qpos[UR5_jI[i].p];
-    rml_i->CurrentVelocityVector->VecData[i] = d->qvel[UR5_jI[i].v];
-    rml_i->CurrentAccelerationVector->VecData[i] = 0.0;
-            
-    rml_i->MaxVelocityVector->VecData[i] = UR5_maxVel;
-    rml_i->MaxAccelerationVector->VecData[i] = UR5_maxAccel;
-    rml_i->MaxJerkVector->VecData[i] = UR5_maxJerk;
-    
-    rml_i->SelectionVector->VecData[i] = true;
+    ur5_joint_names_[i] = "joint" + boost::lexical_cast<std::string>(i+1);
   }
   
-  ur_nh.setParam("moving", false);
+  // gripper indexing
+  std::vector<GripperFinger> gf_(2);
+  gf_[0].joint_posI = m->jnt_qposadr[mj_name2id(m, mjOBJ_JOINT, "joint7_1")]; // joint pos
+  gf_[1].joint_posI = m->jnt_qposadr[mj_name2id(m, mjOBJ_JOINT, "joint7_2")];
+  gf_[0].motorI = mj_name2id(m, mjOBJ_ACTUATOR, "gripper_close_1"); // motors
+  gf_[1].motorI = mj_name2id(m, mjOBJ_ACTUATOR, "gripper_close_2");
+  gf_[0].ftip_geomI = mj_name2id(m, mjOBJ_GEOM, "left_follower_mesh"); // fingertip geoms
+  gf_[1].ftip_geomI = mj_name2id(m, mjOBJ_GEOM, "right_follower_mesh");
+  gf_[0].lock_weldI = mj_name2id(m, mjOBJ_EQUALITY, "lfinger_lock"); // fingertip welds
+  gf_[1].lock_weldI = mj_name2id(m, mjOBJ_EQUALITY, "rfinger_lock");
   
+  int grasp_eqI_ = mj_name2id(m, mjOBJ_EQUALITY, "grasp_");
+  std::vector<std::string> graspable_body_names_;
+  nh.getParam("graspable_bodies", graspable_body_names_);
+  std::vector<int> graspable_geomsI_;
+  for(int i=0; i<(int)graspable_body_names_.size(); i++)
+  {
+    int bI_ = mj_name2id(m, mjOBJ_BODY, graspable_body_names_[i].c_str());
+    if(bI_ != -1)
+      for(int i=0; i<m->body_geomnum[bI_]; i++)
+        graspable_geomsI_.push_back(m->body_geomadr[bI_]+i);
+  }
   
-   
-  //// other
+  // init
+  ur5->init(m,d, robot_nh, ur5_joint_names_);
+  gripper->init(m,d, robot_nh, gf_,grasp_eqI_,graspable_geomsI_);
+    
+  
+
+  //// other "modules"
+  
+  std::vector<std::string> free_body_names_; nh.getParam("free_bodies", free_body_names_);
+  fb_tracker->init(m,d, free_body_names_);
 
   // threaded manip
   threaded_connections.clear();
   
   // randomization
-  rand_child_fix.clear(); rand_proc_now = false;  
+  rand_child_fix.clear(); rand_proc_now = false;
+
+
 }
 
 void MujocoNode::loop()
@@ -304,20 +184,12 @@ void MujocoNode::loop()
     // ROS comms
     ros::spinOnce();    
     
-    // UR5
-    handle_UR5();    
+    // UR5 + gripper
+    ur5->proc(m,d, robot_nh);
+    gripper->proc(m,d, robot_nh);    
     
-    // gripper
-    handle_gripper();    
-    
-    // free bodies
-    handle_free_bodies();    
-    
-    // threaded manip
-    handle_threaded_connections();
-
-    // randomization
-    handle_randomization();
+    // other "modules"
+    fb_tracker->proc(m,d); // do last
     
     
       
@@ -341,20 +213,6 @@ void MujocoNode::loop()
     // process pending GUI events, call GLFW callbacks
     glfwPollEvents();   
   }
-}
-
-
-
-void MujocoNode::xpose_to_tf(tf::Transform& tf_out, const int bI)
-{
-  tf_out.setOrigin(tf::Vector3(d->xpos[3*bI+0], d->xpos[3*bI+1], d->xpos[3*bI+2]));
-  tf_out.setRotation(tf::Quaternion(d->xquat[4*bI+1], d->xquat[4*bI+2], d->xquat[4*bI+3], d->xquat[4*bI+0]));
-}
-
-void MujocoNode::get_relpose(tf::Transform& tf_out, const int abI, const int bbI)
-{
-  tf::Transform ab_tf_, bb_tf_; xpose_to_tf(ab_tf_, abI); xpose_to_tf(bb_tf_, bbI);
-  tf_out = ab_tf_.inverse() * bb_tf_;
 }
 
 
@@ -413,264 +271,6 @@ void scroll(GLFWwindow* window, double xoffset, double yoffset)
 
 
 
-//// UR5
-
-void MujocoNode::jpos_cb(const std_msgs::Float32MultiArray& msg)
-{
-  int nsteps_ = msg.data.size() / UR5_DOF;
-  
-  if(nsteps_ > 0)
-  {
-    // target joint positions
-    UR5_jpos.clear(); int i_ = 0;
-    for(int i=0; i<nsteps_; i++)
-    {
-      std::vector<double> d_(UR5_DOF);
-      for(int j=0; j<UR5_DOF; j++) d_[j] = msg.data[i_++];
-      UR5_jpos.push_back(d_);
-    }
-    
-    // target joint velocities
-    double vC_ = 1.0;
-    if(msg.data.size()%UR5_DOF == 1) vC_ = msg.data.back();
-    UR5_jvel.clear();
-    for(int i=0; i<nsteps_-1; i++)
-    {
-      std::vector<double> d_(UR5_DOF);
-      for(int j=0; j<UR5_DOF; j++) d_[j] = vC_ * (UR5_jpos[i+1][j]-UR5_jpos[i][j]);
-      UR5_jvel.push_back(d_);
-    }
-    UR5_jvel.push_back(std::vector<double>(UR5_DOF, 0.0));
-    
-    UR5_traj_step = 0; UR5_traj_steps = nsteps_; UR5_traj_in = true;
-  }  
-}
-
-void MujocoNode::handle_UR5()
-{
-  if(UR5_traj_in)
-  {
-    // start new motion if not already
-    if(!UR5_traj_started)
-    {
-      for(int i=0; i<UR5_DOF; i++)
-      {
-        // set target position and velocity
-        rml_i->TargetPositionVector->VecData[i] = UR5_jpos[UR5_traj_step][i];
-        rml_i->TargetVelocityVector->VecData[i] = UR5_jvel[UR5_traj_step][i];
-      }
-      ur_nh.setParam("moving", true); UR5_traj_started = true;
-    }
-    
-    // continue motion
-    int rml_result_ = rml_api->RMLPosition(*rml_i,rml_o, rml_flags);
-    *rml_i->CurrentPositionVector = *rml_o->NewPositionVector;
-    *rml_i->CurrentVelocityVector = *rml_o->NewVelocityVector;
-    *rml_i->CurrentAccelerationVector = *rml_o->NewAccelerationVector;
-    
-    // check if finished
-    if(rml_result_ == ReflexxesAPI::RML_FINAL_STATE_REACHED)
-      { UR5_traj_started = false; UR5_traj_step++; }
-      
-    if(UR5_traj_step == UR5_traj_steps)
-    {
-      ur_nh.setParam("moving", false); UR5_traj_in = false;
-      for(int i=0; i<UR5_DOF; i++)
-        rml_i->CurrentAccelerationVector->VecData[i] = 0.0;
-    }
-
-    // copy UR5 state to MuJoCo
-    for(int i=0; i<UR5_DOF; i++)
-    {
-      d->qpos[UR5_jI[i].p] = rml_o->NewPositionVector->VecData[i];
-      d->qvel[UR5_jI[i].v] = rml_o->NewVelocityVector->VecData[i];
-    }
-  }
-  else
-  {
-    // hold positions
-    for(int i=0; i<UR5_DOF; i++)
-    {
-      d->qpos[UR5_jI[i].p] = UR5_jpos.back()[i];
-      d->qvel[UR5_jI[i].v] = 0.0;
-    }
-  }
-  
-  // publish joint state
-  std_msgs::Float32MultiArray UR5_jstate_out_;
-  UR5_jstate_out_.data.resize(UR5_DOF*2);
-  for(int i=0; i<UR5_DOF; i++)
-  {
-    UR5_jstate_out_.data[i] = d->qpos[UR5_jI[i].p];
-    UR5_jstate_out_.data[UR5_DOF+i] = d->qvel[UR5_jI[i].v];
-  }
-  jstate_pub.publish(UR5_jstate_out_);
-}
-
-
-
-//// gripper
-
-void MujocoNode::gripper_cb(const std_msgs::Bool& msg)
-{
-  gripper_in = msg.data;
-}
-
-void MujocoNode::handle_gripper()
-{
-  if(gripper_state != gripper_in)
-  {
-    m->eq_active[gri_l_weldI] = m->eq_active[gri_r_weldI] = false;
-    if(gripper_in) d->ctrl[gripper_m1I] = d->ctrl[gripper_m2I] = gripper_torque; // close
-    else d->ctrl[gripper_m1I] = d->ctrl[gripper_m2I] = -gripper_torque; // open
-      
-    gripper_state = gripper_in;
-  }
-  
-  if(gripper_state)
-  {
-    if(grippedI == -1)
-    {
-      grippedI = gripper_checks();
-      if(grippedI != -1)
-      {
-        // lock fingertips
-        gripper_set_weld_relpose(gri_l_weldI);
-        gripper_set_weld_relpose(gri_r_weldI);
-        // set object grip weld + rosparam
-        m->eq_obj2id[grip_weldI] = grippable_bI[grippedI];
-        gripper_set_weld_relpose(grip_weldI);
-        ur_nh.setParam("gripped_object", grippable_body_names[grippedI]);
-      }
-    }
-  }
-  else
-  {
-    if(grippedI != -1)
-    {
-      m->eq_active[grip_weldI] = false; grippedI = -1;
-      ur_nh.setParam("gripped_object", "");
-    }
-    
-    if(std::min(d->qpos[gri_jI[0].p], d->qpos[gri_jI[1].p]) <= gripper_driver_min_pos)
-    {
-      d->ctrl[gripper_m1I] = d->ctrl[gripper_m2I] = 0.0;
-      if(!m->eq_active[gri_l_weldI]) gripper_lock_default();
-    }
-  }
-}
-
-bool MujocoNode::gripper_check(const int target_gI)
-{
-  bool lcon_ = false, rcon_ = false;
-  for(int i=0; i<d->ncon; i++)
-  {
-    if(!lcon_ && (d->contact[i].geom1 == gri_l_gI || d->contact[i].geom2 == gri_l_gI))
-      lcon_ = (d->contact[i].geom1 == target_gI || d->contact[i].geom2 == target_gI);
-    if(!rcon_ && (d->contact[i].geom1 == gri_r_gI || d->contact[i].geom2 == gri_r_gI))
-      rcon_ = (d->contact[i].geom1 == target_gI || d->contact[i].geom2 == target_gI);
-  }
-  
-  return (lcon_ && rcon_);
-}
-
-int MujocoNode::gripper_checks()
-{
-  for(int i=0; i<(int)grippable_gI.size(); i++)
-    if(gripper_check(grippable_gI[i])) return i;
-    
-  return -1;
-}
-
-void MujocoNode::gripper_set_weld_relpose(const int weldI)
-{
-  tf::Transform relpose_; get_relpose(relpose_, m->eq_obj1id[weldI],m->eq_obj2id[weldI]);
-
-  m->eq_data[7*weldI+0] = relpose_.getOrigin()[0];
-  m->eq_data[7*weldI+1] = relpose_.getOrigin()[1];
-  m->eq_data[7*weldI+2] = relpose_.getOrigin()[2];
-  m->eq_data[7*weldI+3] = relpose_.getRotation()[3];
-  m->eq_data[7*weldI+4] = relpose_.getRotation()[0];
-  m->eq_data[7*weldI+5] = relpose_.getRotation()[1];
-  m->eq_data[7*weldI+6] = relpose_.getRotation()[2];
-  
-  m->eq_active[weldI] = true;
-}
-
-void MujocoNode::gripper_lock_default()
-{
-  for(int i=0; i<7; i++)
-  {
-      m->eq_data[7*gri_l_weldI+i] = gri_l_defpose[i];
-      m->eq_data[7*gri_r_weldI+i] = gri_r_defpose[i];   
-  }
-  
-  m->eq_active[gri_l_weldI] = m->eq_active[gri_r_weldI] = true;
-}
-
-
-
-//// streaming RGB camera
-
-void MujocoNode::fill_rgb_image_msg(sensor_msgs::Image& msg,
-  const unsigned char* buf, const int buf_sz)
-{
-  // other data fields
-  msg.header.stamp = ros::Time::now();
-  msg.header.frame_id = ext_cam_name;
-  msg.encoding = "rgb8";
-  msg.width = GLFW_W; msg.height = GLFW_H;
-  msg.step = msg.width * GLFW_C;
-  
-  // copy
-//  msg.data = std::vector<unsigned char>(buf, buf+buf_sz);
-
-  // horizontal flip
-  msg.data.resize(buf_sz); int iI_ = 0;
-  for(int v=0; v<msg.height; v++)
-  {
-    int oI_ = (v+1)*msg.step - GLFW_C;
-    for(int u=0; u<msg.width; u++)
-    {
-      for(int c=0; c<GLFW_C; c++) msg.data[oI_++] = buf[iI_++];
-      oI_ -= 2*GLFW_C; // shift output index back to start of preceding element
-    }
-  }
-}
-
-void MujocoNode::publish_cam_rgb(mjrRect& viewport)
-{
-  // render RGB off-screen
-  cam.fixedcamid = ext_camI; cam.type = mjCAMERA_FIXED;
-  mjr_setBuffer(mjFB_OFFSCREEN, &con);
-  mjv_updateScene(m, d, &opt, NULL, &cam, mjCAT_ALL, &scn);
-  mjr_render(viewport, &scn, &con);
-  // read buffer
-  int rgb_buflen_ = GLFW_W*GLFW_H * GLFW_C;
-  unsigned char rgb_buf_raw_[rgb_buflen_];
-  mjr_readPixels(rgb_buf_raw_, NULL, viewport, &con);
-  
-  // publish
-  sensor_msgs::Image rgb_msg_;
-  fill_rgb_image_msg(rgb_msg_, rgb_buf_raw_,rgb_buflen_);
-  ext_cam_pub.publish(rgb_msg_);
-  
-  // restore rendering to onscreen abstract camera
-  cam.fixedcamid = -1; cam.type = mjCAMERA_FREE;
-  mjr_setBuffer(mjFB_WINDOW, &con);
-}
-
-
-
-//// free bodies
-
-void MujocoNode::handle_free_bodies()
-{
-  
-}
-
-
-
 //// threaded manip
 
 bool MujocoNode::threadlock_cb(mujoco_ros::ThreadLock::Request& req, mujoco_ros::ThreadLock::Response& res)
@@ -704,39 +304,30 @@ bool MujocoNode::threadlock_cb(mujoco_ros::ThreadLock::Request& req, mujoco_ros:
     for(int i=0; i<6; i++)
     {
       tc_.jI[i].I = m->body_jntadr[bI_] + jI_ord_[i];
-      if(tc_.jI[i].I != -1)
-      {
-        tc_.jI[i].p = m->jnt_qposadr[tc_.jI[i].I];
-        tc_.jI[i].v = m->jnt_dofadr[tc_.jI[i].I];
-      }
+      tc_.jI[i].p = m->jnt_qposadr[tc_.jI[i].I];
+      tc_.jI[i].v = m->jnt_dofadr[tc_.jI[i].I];
     }
     
-    // valid if both joints exist for threading axis
-    if((tc_.jI[0].I != -1) && (tc_.jI[1].I != -1))
+    // constrain other joints
+    for(int i=2; i<6; i++)
     {
-      // constrain other joints, where present
-      for(int i=2; i<6; i++)
-        if(tc_.jI[i].I != -1)
-        {
-          m->jnt_range[2*tc_.jI[i].I+0] = d->qpos[tc_.jI[i].p] - JNT_LOCK_TOL;
-          m->jnt_range[2*tc_.jI[i].I+1] = d->qpos[tc_.jI[i].p] + JNT_LOCK_TOL;
-          m->jnt_limited[tc_.jI[i].I] = true; d->qvel[tc_.jI[i].v] = 0.0;
-        }
-      // append connection, return
-      threaded_connections.push_back(tc_);
-      res.ok = true; return true;
+      m->jnt_range[2*tc_.jI[i].I+0] = d->qpos[tc_.jI[i].p] - JNT_LOCK_TOL;
+      m->jnt_range[2*tc_.jI[i].I+1] = d->qpos[tc_.jI[i].p] + JNT_LOCK_TOL;
+      m->jnt_limited[tc_.jI[i].I] = true; d->qvel[tc_.jI[i].v] = 0.0;
     }
-    else { res.ok = false; return true; }
+    
+    // append connection, return
+    threaded_connections.push_back(tc_);
+    res.ok = true; return true;
   }
   else
   {
     for(size_t i=0; i<threaded_connections.size(); i++)
       if(threaded_connections[i].fastener_name == req.fastener_name)
       {
-        // free other joints, where present
+        // free other joints
         for(int j=2; j<6; j++)
-          if(threaded_connections[i].jI[j].I != -1)
-            m->jnt_limited[threaded_connections[i].jI[j].I] = false;
+          m->jnt_limited[threaded_connections[i].jI[j].I] = false;
         // erase connection, return
         threaded_connections.erase(threaded_connections.begin()+i);
         res.ok = true; return true;
@@ -835,7 +426,7 @@ bool MujocoNode::randomize_physical_cb(mujoco_ros::RandomizePhysicalAttribute::R
           {
             PCtf pc_;
             pc_.p_bI = m->body_parentid[b]; // parent body index
-            xpose_to_tf(pc_.world_c, b); // child pose wrt world
+            xpose_to_tf(m,d, pc_.world_c, b); // child pose wrt world
             for(int j=0; j<6; j++) // child joint indices
             {
               pc_.jpI[j] = m->jnt_qposadr[m->body_jntadr[b]+j];
@@ -877,7 +468,7 @@ void MujocoNode::handle_randomization()
 void MujocoNode::rand_child_pose_fix(PCtf& pc)
 {
   // relative p->c pose
-  xpose_to_tf(pc.world_p, pc.p_bI);
+  xpose_to_tf(m,d, pc.world_p, pc.p_bI);
   tf::Transform rp_tf_ = pc.world_p.inverse() * pc.world_c;
   // euler rotation
   tf::Matrix3x3 m_(rp_tf_.getRotation());
@@ -891,6 +482,118 @@ void MujocoNode::rand_child_pose_fix(PCtf& pc)
   }
   // zero child joint velocities
   for(int j=0; j<6; j++) d->qvel[pc.jvI[j]] = 0.0;
+}
+
+
+
+//// ROS
+
+bool MujocoNode::reset_mujoco_cb(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res)
+{
+  free_mujoco_memory(); reset();
+  
+  return true;
+}
+
+bool MujocoNode::getpose_cb(mujoco_ros::GetPose::Request& req, mujoco_ros::GetPose::Response& res)
+{
+  int type_ = -1;
+  if(req.type == "body") type_ = mjOBJ_BODY;
+  else if(req.type == "geom") type_ = mjOBJ_GEOM;
+  else if(req.type == "site") type_ = mjOBJ_SITE;
+  else return true;
+  
+  int I_ = mj_name2id(m, type_, req.name.c_str());
+  if(I_ != -1)
+  {
+    // copy sub-parts of position and rotation matrices
+    res.pos.resize(3); res.rot.resize(9);
+    
+    if(type_ == mjOBJ_BODY)
+    {
+      for(int i=0; i<3; i++) res.pos[i] = d->xpos[3*I_+i];
+      for(int i=0; i<9; i++) res.rot[i] = d->xmat[9*I_+i];
+    }
+    else if(type_ == mjOBJ_GEOM)
+    {
+      for(int i=0; i<3; i++) res.pos[i] = d->geom_xpos[3*I_+i];
+      for(int i=0; i<9; i++) res.rot[i] = d->geom_xmat[9*I_+i];
+    }
+    else if(type_ == mjOBJ_SITE)
+    {
+      for(int i=0; i<3; i++) res.pos[i] = d->site_xpos[3*I_+i];
+      for(int i=0; i<9; i++) res.rot[i] = d->site_xmat[9*I_+i];
+    }
+  }
+  else { res.pos.clear(); res.rot.clear(); }
+
+  return true;
+}
+
+bool MujocoNode::get_brelpose_cb(mujoco_ros::GetRelativePoseBodies::Request& req,
+  mujoco_ros::GetRelativePoseBodies::Response& res)
+{
+  int baI_ = mj_name2id(m, mjOBJ_BODY, req.bodyA_name.c_str()),
+    bbI_ = mj_name2id(m, mjOBJ_BODY, req.bodyB_name.c_str());
+
+  if((baI_ != -1) && (bbI_ != -1))
+  {
+    tf::Transform tfo_; xpose_to_tf_rel(m,d, tfo_, baI_,bbI_); tf::poseTFToMsg(tfo_, res.relpose);
+    res.ok = true;
+  }
+  else res.ok = false;
+
+  return true;
+}
+
+
+
+void MujocoNode::publish_cam_rgb(mjrRect& viewport)
+{
+  // render RGB off-screen
+  cam.fixedcamid = ext_camI; cam.type = mjCAMERA_FIXED;
+  mjr_setBuffer(mjFB_OFFSCREEN, &con);
+  mjv_updateScene(m, d, &opt, NULL, &cam, mjCAT_ALL, &scn);
+  mjr_render(viewport, &scn, &con);
+  // read buffer
+  int rgb_buflen_ = GLFW_W*GLFW_H * GLFW_C;
+  unsigned char rgb_buf_raw_[rgb_buflen_];
+  mjr_readPixels(rgb_buf_raw_, NULL, viewport, &con);
+  
+  // publish
+  sensor_msgs::Image rgb_msg_;
+  fill_rgb_image_msg(rgb_msg_, rgb_buf_raw_,rgb_buflen_);
+  ext_cam_pub.publish(rgb_msg_);
+  
+  // restore rendering to onscreen abstract camera
+  cam.fixedcamid = -1; cam.type = mjCAMERA_FREE;
+  mjr_setBuffer(mjFB_WINDOW, &con);
+}
+
+void MujocoNode::fill_rgb_image_msg(sensor_msgs::Image& msg,
+  const unsigned char* buf, const int buf_sz)
+{
+  // other data fields
+  msg.header.stamp = ros::Time::now();
+  msg.header.frame_id = ext_cam_name;
+  msg.encoding = "rgb8";
+  msg.width = GLFW_W; msg.height = GLFW_H;
+  msg.step = msg.width * GLFW_C;
+  
+  // copy
+//  msg.data = std::vector<unsigned char>(buf, buf+buf_sz);
+
+  // horizontal flip
+  msg.data.resize(buf_sz); int iI_ = 0;
+  for(int v=0; v<msg.height; v++)
+  {
+    int oI_ = (v+1)*msg.step - GLFW_C;
+    for(int u=0; u<msg.width; u++)
+    {
+      for(int c=0; c<GLFW_C; c++) msg.data[oI_++] = buf[iI_++];
+      oI_ -= 2*GLFW_C; // shift output index back to start of preceding element
+    }
+  }
 }
 
 

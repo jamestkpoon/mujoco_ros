@@ -172,7 +172,7 @@
     <equality>
         <weld name="lfinger_lock" body1="ee_link" body2="left_follower_link" active="false"/>
         <weld name="rfinger_lock" body1="ee_link" body2="right_follower_link" active="false"/>
-        <weld name="grip_" body1="ee_link" active="false"/>
+        <weld name="grasp_" body1="ee_link" active="false"/>
     </equality>
     
     <sensor>

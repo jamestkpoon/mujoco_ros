@@ -9,7 +9,7 @@
         
         ext_cam_name: "ros_cam"
         free_bodies: [ "base", "nut" ]
-        grippable_bodies: [ "nut" ]
+        graspable_bodies: [ "nut" ]
       </rosparam>
       
       <node name="mujoco_sim_node" pkg="mujoco_ros" type="mujoco_node" output="screen" required="true"/>
