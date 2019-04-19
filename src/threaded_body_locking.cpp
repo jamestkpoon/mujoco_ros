@@ -45,12 +45,12 @@ bool ThreadedBodyLocker::tl_cb(mujoco_ros::ThreadLock::Request& req,
 bool ThreadedBodyLocker::handle_request(mjModel* m, mjData* d,
   FreeBodyTracker* fb_tracker, const mujoco_ros::ThreadLock::Request& req)
 {
+  int req_bI_ = mj_name2id(m, mjOBJ_BODY, req.fastener_name.c_str());
+  if((req_bI_ == -1) || (m->body_jntnum[req_bI_] != 6)) return false;
+
   if(req.attach_flag)
   {
-    // joint indexing, assumes 6 joints [ tx,ty,tz, rx,ry,rz ]
-    int bI_ = mj_name2id(m, mjOBJ_BODY, req.fastener_name.c_str());
-    if((bI_ == -1) || (m->body_jntnum[bI_] != 6)) return false;
-    
+    // joint indexing, assumes 6 joints [ tx,ty,tz, rx,ry,rz ]   
     std::vector<int> jI_ord_; 
     if(req.axis == "x")
     {
@@ -70,10 +70,10 @@ bool ThreadedBodyLocker::handle_request(mjModel* m, mjData* d,
     else return false;
     
     ThreadedConnection tc_;
-    tc_.fastener_name = req.fastener_name; tc_.pitch = req.pitch;
+    tc_.bI = req_bI_; tc_.pitch = req.pitch;
     for(int i=0; i<6; i++)
     {
-      tc_.jI[i].I = m->body_jntadr[bI_] + jI_ord_[i];
+      tc_.jI[i].I = m->body_jntadr[tc_.bI] + jI_ord_[i];
       tc_.jI[i].p = m->jnt_qposadr[tc_.jI[i].I];
       tc_.jI[i].v = m->jnt_dofadr[tc_.jI[i].I];
     }
@@ -86,21 +86,31 @@ bool ThreadedBodyLocker::handle_request(mjModel* m, mjData* d,
       m->jnt_limited[tc_.jI[i].I] = true; d->qvel[tc_.jI[i].v] = 0.0;
     }
     
-    // append connection, return OK
+    // append connection
     threaded_connections.push_back(tc_);
+    
+    // joint tracking flags
+    std::vector<bool> track_flags_(6, true);
+    track_flags_[jI_ord_[0]] = false; // stop tracking for relevant translation axis
+    fb_tracker->set_track_flags(tc_.bI, track_flags_);
+    
     return true;
   }
   else
   {
     for(size_t i=0; i<threaded_connections.size(); i++)
-      if(threaded_connections[i].fastener_name == req.fastener_name)
+      if(threaded_connections[i].bI == req_bI_)
       {
         // free other joints
         for(int j=2; j<6; j++)
           m->jnt_limited[threaded_connections[i].jI[j].I] = false;
-        // erase connection, return OK
+        // delete connection
         threaded_connections.erase(threaded_connections.begin()+i);
-        return true;
+        
+        // reset joint tracking flags
+        fb_tracker->set_track_flags(req_bI_, std::vector<bool>(6, true));
+        
+        break;
       }
   }
 }

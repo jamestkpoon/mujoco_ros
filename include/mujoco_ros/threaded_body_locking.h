@@ -13,8 +13,7 @@
 
 struct ThreadedConnection
 {
-  std::string fastener_name;
-  double pitch; JointIndex jI[6];
+  int bI; double pitch; JointIndex jI[6];
 };
 
 

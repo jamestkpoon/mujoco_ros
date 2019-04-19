@@ -39,7 +39,7 @@ void rel_pose_as_tuple(mjModel* m, mjData* d, std::vector<double>& tup, const in
 
 double wrap_pi_diff(const double x)
 {
-  double fx_ = fabs(x), mag_ = std::min(fx_, 2*M_PI-fx_);
+  double fx_ = fabs(x), mag_ = std::min(fx_, (2*M_PI)-fx_);
   
   if(x >= 0.0) return mag_;
   else return -mag_;
