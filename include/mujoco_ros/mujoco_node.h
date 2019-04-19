@@ -85,7 +85,6 @@ class MujocoNode
     bool get_brelpose_cb(mujoco_ros::GetRelativePoseBodies::Request& req, mujoco_ros::GetRelativePoseBodies::Response& res);
     
     void free_mujoco_memory();
-    void get_indexing();
     void reset();
     
     // Mujoco/GLFW
