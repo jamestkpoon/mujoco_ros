@@ -9,8 +9,9 @@
 
 struct FreeBody
 {
-  int bI, pbI; tf::Transform defpose;
-  JointIndex jI[6]; std::vector<bool> track;
+  int bI, pbI; JointIndex jI[6];
+  tf::Transform defpose; std::vector<double> last_pc_tup;
+  std::vector<bool> track;
 };
 
 
@@ -20,7 +21,7 @@ class FreeBodyTracker
   
   public:
   
-    FreeBodyTracker() {}
+    FreeBodyTracker(const double sim_period);
     ~FreeBodyTracker() {}
     
     bool init(mjModel* m, mjData* d,
@@ -31,8 +32,8 @@ class FreeBodyTracker
   
   private:
   
-    std::vector<FreeBody> free_bodies;
-    int N_FB;
+    double dt;
+    std::vector<FreeBody> free_bodies; int N_FB;
 };
 
 

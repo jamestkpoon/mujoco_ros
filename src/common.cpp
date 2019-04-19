@@ -28,3 +28,19 @@ void transform_to_6tuple(std::vector<double>& tup, const tf::Transform& pose_tf)
     tup[3+i] = eul_[i];
   }
 }
+
+void rel_pose_as_tuple(mjModel* m, mjData* d, std::vector<double>& tup, const int pI, const int cI)
+{
+  tf::Transform pc_tf_; xpose_to_tf_rel(m,d, pc_tf_, pI,cI);
+  transform_to_6tuple(tup, pc_tf_);
+}
+
+
+
+double wrap_pi_diff(const double x)
+{
+  double fx_ = fabs(x), mag_ = std::min(fx_, 2*M_PI-fx_);
+  
+  if(x >= 0.0) return mag_;
+  else return -mag_;
+}

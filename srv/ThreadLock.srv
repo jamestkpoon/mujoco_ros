@@ -4,4 +4,4 @@ string axis
 float64 pitch
 bool attach_flag
 ---
-bool ok
+#bool ok

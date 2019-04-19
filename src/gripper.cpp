@@ -31,7 +31,6 @@ bool Gripper::init(mjModel* m, mjData* d, ros::NodeHandle& nh,
 
   // graspable bodies
   grasp_weldI = grasp_eq_idx;
-  graspable_gI.clear(); graspable_bI.clear(); graspable_bodies.clear();
   for(size_t i=0; i<graspable_geomI.size(); i++)
     if(graspable_geomI[i] != -1)
     {

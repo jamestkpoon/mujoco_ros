@@ -161,6 +161,7 @@ include_directories(
 add_executable(mujoco_node src/mujoco_node.cpp src/common.cpp
   src/ur5.cpp src/gripper.cpp
   src/freebody_joint_tracking.cpp
+  src/threaded_body_locking.cpp
 )
 
 ## Rename C++ executable without prefix

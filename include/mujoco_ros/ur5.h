@@ -22,7 +22,7 @@ class UR5
   public:
   
     UR5(ros::NodeHandle& nh,
-      const double reflexxes_dt);
+      const double sim_period);
     ~UR5();
   
     bool init(mjModel* m, mjData* d, ros::NodeHandle& nh,

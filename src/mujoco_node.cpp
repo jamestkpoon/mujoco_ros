@@ -3,21 +3,22 @@
 MujocoNode::MujocoNode()
 {
   // simulation frequency
-  int fps_; nh.getParam("FPS", fps_); FPS_period = 1.0 / fps_;
+  int fps_; nh.getParam("FPS", fps_); mujoco_dt = 1.0 / fps_;
   
   // UR5 + gripper
   robot_nh = ros::NodeHandle("ur5");
-  ur5 = new UR5(robot_nh, FPS_period);
+  ur5 = new UR5(robot_nh, mujoco_dt);
   gripper = new Gripper(robot_nh);
   
   // other "modules"
-  fb_tracker = new FreeBodyTracker();
+  fb_tracker = new FreeBodyTracker(mujoco_dt);
+  tb_locker = new ThreadedBodyLocker(nh);
   
   
 
   // initialize GLFW
   glfwInit();
-  window = glfwCreateWindow(GLFW_W, GLFW_H, "Mujoco_UR5", NULL, NULL);
+  window = glfwCreateWindow(GLFW_W, GLFW_H, "MujocoROS", NULL, NULL);
   glfwMakeContextCurrent(window);
   glfwSwapInterval(1);
 
@@ -51,9 +52,6 @@ MujocoNode::MujocoNode()
   }
   
   
-  
-  // threaded manip
-  threadlock_srv = nh.advertiseService("thread_lock", &MujocoNode::threadlock_cb, this);
  
   // randomization
   randtex_srv = nh.advertiseService("rand/textural", &MujocoNode::randomize_textural_cb, this);
@@ -74,6 +72,7 @@ MujocoNode::~MujocoNode()
   // free other things
   delete ur5; delete gripper;
   delete fb_tracker;
+  delete tb_locker;
 }
 
 
@@ -165,11 +164,12 @@ void MujocoNode::reset()
 
   //// other "modules"
   
+  // free body joint tracker
   std::vector<std::string> free_body_names_; nh.getParam("free_bodies", free_body_names_);
   fb_tracker->init(m,d, free_body_names_);
-
-  // threaded manip
-  threaded_connections.clear();
+  
+  // threaded object locking handler
+  tb_locker->init();
   
   // randomization
   rand_child_fix.clear(); rand_proc_now = false;
@@ -189,6 +189,7 @@ void MujocoNode::loop()
     gripper->proc(m,d, robot_nh);    
     
     // other "modules"
+    tb_locker->proc(m,d, fb_tracker);
     fb_tracker->proc(m,d); // do last
     
     
@@ -196,7 +197,7 @@ void MujocoNode::loop()
     //// update sim
     
     mjtNum simstart = d->time;
-    while( d->time - simstart < FPS_period ) mj_step(m, d);    
+    while( d->time - simstart < mujoco_dt ) mj_step(m, d);    
     
     // get framebuffer viewport
     mjrRect viewport = {0, 0, 0, 0};
@@ -267,82 +268,6 @@ void scroll(GLFWwindow* window, double xoffset, double yoffset)
 {
     // emulate vertical mouse motion = 5% of window height
     mjv_moveCamera(m, mjMOUSE_ZOOM, 0, -0.05*yoffset, &scn, &cam);
-}
-
-
-
-//// threaded manip
-
-bool MujocoNode::threadlock_cb(mujoco_ros::ThreadLock::Request& req, mujoco_ros::ThreadLock::Response& res)
-{
-  if(req.attach_flag)
-  {
-    // joint indexing, assumes 6 joints [ tx,ty,tz, rx,ry,rz ]
-    int bI_ = mj_name2id(m, mjOBJ_BODY, req.fastener_name.c_str());
-    if((bI_ == -1) || (m->body_jntnum[bI_] != 6)) { res.ok = false; return true; }
-    
-    std::vector<int> jI_ord_; 
-    if(req.axis == "x")
-    {
-      int ord_[6] = { 0,3, 1,4, 2,5 };
-      jI_ord_ = std::vector<int>(ord_,ord_+6);
-    }
-    else if(req.axis == "y")
-    {
-      int ord_[6] = { 1,4, 0,3, 2,5 };
-      jI_ord_ = std::vector<int>(ord_,ord_+6);
-    }
-    else if(req.axis == "z")
-    {
-      int ord_[6] = { 2,5, 0,3, 1,4 };
-      jI_ord_ = std::vector<int>(ord_,ord_+6);
-    }
-    else { res.ok = false; return true; }
-    
-    ThreadedConnection tc_;
-    tc_.fastener_name = req.fastener_name; tc_.pitch = req.pitch;
-    for(int i=0; i<6; i++)
-    {
-      tc_.jI[i].I = m->body_jntadr[bI_] + jI_ord_[i];
-      tc_.jI[i].p = m->jnt_qposadr[tc_.jI[i].I];
-      tc_.jI[i].v = m->jnt_dofadr[tc_.jI[i].I];
-    }
-    
-    // constrain other joints
-    for(int i=2; i<6; i++)
-    {
-      m->jnt_range[2*tc_.jI[i].I+0] = d->qpos[tc_.jI[i].p] - JNT_LOCK_TOL;
-      m->jnt_range[2*tc_.jI[i].I+1] = d->qpos[tc_.jI[i].p] + JNT_LOCK_TOL;
-      m->jnt_limited[tc_.jI[i].I] = true; d->qvel[tc_.jI[i].v] = 0.0;
-    }
-    
-    // append connection, return
-    threaded_connections.push_back(tc_);
-    res.ok = true; return true;
-  }
-  else
-  {
-    for(size_t i=0; i<threaded_connections.size(); i++)
-      if(threaded_connections[i].fastener_name == req.fastener_name)
-      {
-        // free other joints
-        for(int j=2; j<6; j++)
-          m->jnt_limited[threaded_connections[i].jI[j].I] = false;
-        // erase connection, return
-        threaded_connections.erase(threaded_connections.begin()+i);
-        res.ok = true; return true;
-      }
-    res.ok = false; return true;
-  }
-}
-
-void MujocoNode::handle_threaded_connections()
-{
-  for(size_t i=0; i<threaded_connections.size(); i++)
-  {
-    d->qvel[threaded_connections[i].jI[0].v] = d->qvel[threaded_connections[i].jI[1].v] * threaded_connections[i].pitch;
-    d->qpos[threaded_connections[i].jI[0].p] += d->qvel[threaded_connections[i].jI[0].v] * FPS_period;
-  }
 }
 
 

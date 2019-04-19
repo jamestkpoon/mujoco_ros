@@ -26,24 +26,9 @@
 #include "mujoco_ros/ur5.h"
 #include "mujoco_ros/gripper.h"
 
-
-
 // other "modules"
 #include "mujoco_ros/freebody_joint_tracking.h"
-
-
-
-//// threaded manip
-
-#include "mujoco_ros/ThreadLock.h"
-
-#define JNT_LOCK_TOL 0.005
-
-struct ThreadedConnection
-{
-  std::string fastener_name;
-  double pitch; JointIndex jI[6];
-};
+#include "mujoco_ros/threaded_body_locking.h"
 
 
 
@@ -105,7 +90,7 @@ class MujocoNode
     
     // Mujoco/GLFW
     GLFWwindow* window;
-    double FPS_period;
+    double mujoco_dt;
     
 
     
@@ -123,15 +108,7 @@ class MujocoNode
     
     // other "modules"
     FreeBodyTracker* fb_tracker;
-    
-
-
-    // threaded manip
-    bool threadlock_cb(mujoco_ros::ThreadLock::Request& req, mujoco_ros::ThreadLock::Response& res);
-    void handle_threaded_connections();
-
-    ros::ServiceServer threadlock_srv;
-    std::vector<ThreadedConnection> threaded_connections;
+    ThreadedBodyLocker* tb_locker;
     
     
     

@@ -21,12 +21,14 @@ struct JointIndex
 
 
 
-// fns
+// helper fns
 
 void xpose_to_tf(mjModel* m, mjData* d, tf::Transform& tf_out, const int bI);
 void xpose_to_tf_rel(mjModel* m, mjData* d, tf::Transform& tf_out, const int pbI, const int cbI);
-
 void transform_to_6tuple(std::vector<double>& tup, const tf::Transform& pose_tf);
+void rel_pose_as_tuple(mjModel* m, mjData* d, std::vector<double>& tup, const int pI, const int cI);
+
+double wrap_pi_diff(const double x);
 
 
 

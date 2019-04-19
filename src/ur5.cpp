@@ -2,7 +2,8 @@
 
 
 
-UR5::UR5(ros::NodeHandle& nh, const double reflexxes_dt)
+UR5::UR5(ros::NodeHandle& nh,
+  const double sim_period)
 {
   // properties from v-rep
   maxVel =  180 * (M_PI/180); maxAccel = 40 * (M_PI/180); maxJerk = 80 * (M_PI/180);
@@ -14,7 +15,7 @@ UR5::UR5(ros::NodeHandle& nh, const double reflexxes_dt)
   jstate_pub = nh.advertise<std_msgs::Float32MultiArray>("sensors/joint_state", 1);
 
   // initialize Reflexxes
-  rml_api = new ReflexxesAPI(DOF, reflexxes_dt);
+  rml_api = new ReflexxesAPI(DOF, sim_period);
   rml_i = new RMLPositionInputParameters(DOF);
   rml_o = new RMLPositionOutputParameters(DOF);
   rml_flags.SynchronizationBehavior = RMLPositionFlags::ONLY_TIME_SYNCHRONIZATION;
