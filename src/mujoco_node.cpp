@@ -83,19 +83,9 @@ void MujocoNode::free_mujoco_memory()
   mjv_freeScene(&scn);
   mjr_freeContext(&con);
 
-  // free model and data, deactivate
+  // free model and data
   mj_deleteData(d);
   mj_deleteModel(m);
-}
-
-void MujocoNode::get_indexing()
-{  
-
-
-  
-  
-  
-
 }
 
 void MujocoNode::reset()
@@ -116,9 +106,7 @@ void MujocoNode::reset()
   mjr_makeContext(m, &con, mjFONTSCALE_150);
 
   // step the simulation to start time
-  
   mj_step(m, d); // at least once ?
-  
   double settle_time_; nh.getParam("start_time", settle_time_);
   while(d->time < settle_time_) mj_step(m, d); 
   
@@ -129,9 +117,7 @@ void MujocoNode::reset()
   // UR5 indexing
   std::vector<std::string> ur5_joint_names_(6);
   for(int i=0; i<6; i++)
-  {
     ur5_joint_names_[i] = "joint" + boost::lexical_cast<std::string>(i+1);
-  }
   
   // gripper indexing
   std::vector<GripperFinger> gf_(2);
