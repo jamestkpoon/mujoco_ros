@@ -108,10 +108,12 @@ bool ThreadedBodyLocker::handle_request(mjModel* m, mjData* d,
         threaded_connections.erase(threaded_connections.begin()+i);
         
         // reset joint tracking flags
-        fb_tracker->set_track_flags(req_bI_, std::vector<bool>(6, true));
+        fb_tracker->set_track_flags(req_bI_, std::vector<bool>(6,true));
         
-        break;
+        return true;
       }
+      
+    return false;
   }
 }
 
