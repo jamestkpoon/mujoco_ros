@@ -110,7 +110,7 @@ bool FreeBodyTracker::shift(mjModel* m, mjData* d, const int bI, const tf::Trans
     d->qpos[fb_.jI[j].p] += p_t_tup_[j] - p_c_tup_[j]; // slide
     d->qpos[fb_.jI[3+j].p] += wrap_pi_diff(p_t_tup_[3+j] - p_c_tup_[3+j]); // hinge
     
-    d->qvel[fb_.jI[j].v] = fb_.jI[3+j].v = 0.0; // velocities
+    d->qvel[fb_.jI[j].v] = d->qvel[fb_.jI[3+j].v] = 0.0; // velocities
   }
   
   return true;
