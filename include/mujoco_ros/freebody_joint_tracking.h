@@ -34,8 +34,8 @@ class FreeBodyTracker
     void proc(mjModel* m, mjData* d);
     
     bool set_tracking_parent(const int bI, const int tpbI);
-    bool get_tracking_pos(const int bI, std::vector<double>& tup);
-    bool get_tracking_vel(const int bI, std::vector<double>& tup);
+    bool get_tracking_data(const int bI,
+      std::vector<double>& pos_tup, std::vector<double>& vel_tup);
     bool shift(mjModel* m, mjData* d, const int bI, const tf::Transform& w_t_tf);
   
   private:

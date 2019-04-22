@@ -77,22 +77,14 @@ bool FreeBodyTracker::set_tracking_parent(const int bI, const int tpbI)
   return true;
 }
 
-bool FreeBodyTracker::get_tracking_pos(const int bI, std::vector<double>& tup)
+bool FreeBodyTracker::get_tracking_data(const int bI,
+  std::vector<double>& pos_tup, std::vector<double>& vel_tup)
 {
   int i_ = find_bI(bI);
   if(i_ == -1) return false;
   
-  tup = free_bodies[i_].parent_tracker.pos_tup;
-  
-  return true;
-}
-
-bool FreeBodyTracker::get_tracking_vel(const int bI, std::vector<double>& tup)
-{
-  int i_ = find_bI(bI);
-  if(i_ == -1) return false;
-  
-  tup = free_bodies[i_].parent_tracker.vel_tup;
+  pos_tup = free_bodies[i_].parent_tracker.pos_tup;
+  vel_tup = free_bodies[i_].parent_tracker.vel_tup;
   
   return true;
 }
