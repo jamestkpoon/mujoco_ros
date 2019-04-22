@@ -2,9 +2,11 @@
 
 
 
-ThreadedBodyLocker::ThreadedBodyLocker(ros::NodeHandle& nh)
+ThreadedBodyLocker::ThreadedBodyLocker(ros::NodeHandle& nh,
+  const double sim_period)
 {
   JNT_LOCK_TOL = 0.001;
+  dt = sim_period;
   
   threadlock_srv = nh.advertiseService("thread_lock", &ThreadedBodyLocker::tl_cb, this);
 }
@@ -21,21 +23,24 @@ bool ThreadedBodyLocker::init()
 void ThreadedBodyLocker::proc(mjModel* m, mjData* d,
   FreeBodyTracker* fb_tracker)
 {
-  // request queue
+  // process request queue
   for(int i=0; i<(int)srv_requests.size(); i++)
     handle_request(m,d, fb_tracker, srv_requests[i]); 
   srv_requests.clear();
   
   // handle connections
-  
+  for(int i=0; i<(int)threaded_connections.size(); i++)
+  {
+    d->qvel[threaded_connections[i].jI[0].v] = d->qvel[threaded_connections[i].jI[1].v] * threaded_connections[i].pitch;
+    d->qpos[threaded_connections[i].jI[0].p] += d->qvel[threaded_connections[i].jI[0].v] * dt;
+  }
 }
 
 
 
 //// ROS
 
-bool ThreadedBodyLocker::tl_cb(mujoco_ros::ThreadLock::Request& req,
-  mujoco_ros::ThreadLock::Response& res)
+bool ThreadedBodyLocker::tl_cb(mujoco_ros::ThreadLock::Request& req, mujoco_ros::ThreadLock::Response& res)
 {
   srv_requests.push_back(req);
   
@@ -91,7 +96,7 @@ bool ThreadedBodyLocker::handle_request(mjModel* m, mjData* d,
     
     // joint tracking flags
     std::vector<bool> track_flags_(6, true);
-    track_flags_[jI_ord_[0]] = false; // stop tracking for relevant translation axis
+    track_flags_[jI_ord_[0]] = false; // stop tracking thread translation axis
     fb_tracker->set_track_flags(tc_.bI, track_flags_);
     
     return true;
@@ -116,20 +121,3 @@ bool ThreadedBodyLocker::handle_request(mjModel* m, mjData* d,
     return false;
   }
 }
-
-//// 
-
-
-//    res.ok = false; return true;
-//  }
-//}
-
-//void MujocoNode::handle_threaded_connections()
-//{
-//  for(size_t i=0; i<threaded_connections.size(); i++)
-//  {
-//    d->qvel[threaded_connections[i].jI[0].v] = d->qvel[threaded_connections[i].jI[1].v] * threaded_connections[i].pitch;
-//    d->qpos[threaded_connections[i].jI[0].p] += d->qvel[threaded_connections[i].jI[0].v] * FPS_period;
-//  }
-//}
-

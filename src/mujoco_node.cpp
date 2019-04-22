@@ -1,5 +1,7 @@
 #include <mujoco_ros/mujoco_node.h>
 
+
+
 MujocoNode::MujocoNode()
 {
   // simulation frequency
@@ -12,7 +14,8 @@ MujocoNode::MujocoNode()
   
   // other "modules"
   fb_tracker = new FreeBodyTracker(mujoco_dt);
-  tb_locker = new ThreadedBodyLocker(nh);
+  tb_locker = new ThreadedBodyLocker(nh, mujoco_dt);
+  randomizer = new Randomizer(nh);
   
   
 
@@ -42,20 +45,14 @@ MujocoNode::MujocoNode()
 //    getpose_srv = nh.advertiseService("get_object_pose", &MujocoNode::getpose_cb, this);
   get_brelpose_srv = nh.advertiseService("get_relative_pose_bodies", &MujocoNode::get_brelpose_cb, this);
 
-  // publish camera data to ROS
-  ext_cam = nh.hasParam("ext_cam_name");
-  if(ext_cam)
+  // ROS cam
+  ros_cam = nh.hasParam("ros_cam_name");
+  if(ros_cam)
   {
-    nh.getParam("ext_cam_name", ext_cam_name);
-    ext_camI = mj_name2id(m, mjOBJ_CAMERA, ext_cam_name.c_str());
-    ext_cam_pub = nh.advertise<sensor_msgs::Image>(ext_cam_name+"/rgb", 1);
+    nh.getParam("ros_cam_name", ros_cam_name);
+    ros_camI = mj_name2id(m, mjOBJ_CAMERA, ros_cam_name.c_str());
+    ros_cam_pub = nh.advertise<sensor_msgs::Image>(ros_cam_name+"/rgb", 1);
   }
-  
-  
- 
-  // randomization
-  randtex_srv = nh.advertiseService("rand/textural", &MujocoNode::randomize_textural_cb, this);
-  randphys_srv = nh.advertiseService("rand/physical", &MujocoNode::randomize_physical_cb, this);
 }
 
 MujocoNode::~MujocoNode()
@@ -73,6 +70,7 @@ MujocoNode::~MujocoNode()
   delete ur5; delete gripper;
   delete fb_tracker;
   delete tb_locker;
+  delete randomizer;
 }
 
 
@@ -158,9 +156,7 @@ void MujocoNode::reset()
   tb_locker->init();
   
   // randomization
-  rand_child_fix.clear(); rand_proc_now = false;
-
-
+  randomizer->init();
 }
 
 void MujocoNode::loop()
@@ -175,8 +171,9 @@ void MujocoNode::loop()
     gripper->proc(m,d, robot_nh);    
     
     // other "modules"
+    fb_tracker->proc(m,d);
     tb_locker->proc(m,d, fb_tracker);
-    fb_tracker->proc(m,d); // do last
+    randomizer->proc(m,d, fb_tracker);
     
     
       
@@ -189,8 +186,8 @@ void MujocoNode::loop()
     mjrRect viewport = {0, 0, 0, 0};
     glfwGetFramebufferSize(window, &viewport.width, &viewport.height);
     
-    // publish camera data to ROS
-    if(ext_cam) publish_cam_rgb(viewport);
+    // ROS cam
+    if(ros_cam) publish_cam_rgb(viewport);
     
     // update scene and render for viewport
     mjv_updateScene(m, d, &opt, NULL, &cam, mjCAT_ALL, &scn);
@@ -254,145 +251,6 @@ void scroll(GLFWwindow* window, double xoffset, double yoffset)
 {
     // emulate vertical mouse motion = 5% of window height
     mjv_moveCamera(m, mjMOUSE_ZOOM, 0, -0.05*yoffset, &scn, &cam);
-}
-
-
-
-// randomization
-
-bool MujocoNode::randomize_textural_cb(mujoco_ros::RandomizeTexturalAttribute::Request& req, mujoco_ros::RandomizeTexturalAttribute::Response& res)
-{
-  res.ok.clear();
-  
-  if(req.noise.size() == 8*req.material_names.size())
-    for(int i=0; i<(int)req.material_names.size(); i++)
-    {
-      int matI_ = mj_name2id(m, mjOBJ_MATERIAL, req.material_names[i].c_str());
-      if(matI_ != -1)
-      {
-        // req.noise: [ emission*1, specular*1, shininess*1, reflectance*1, rgba*4 ] * N_material_names
-        m->mat_emission[matI_] = rand_clip(m->mat_emission[matI_], req.noise[8*i+0], 0.0,1.0);
-        m->mat_specular[matI_] = rand_clip(m->mat_specular[matI_], req.noise[8*i+1], 0.0,1.0);
-        m->mat_shininess[matI_] = rand_clip(m->mat_shininess[matI_], req.noise[8*i+2], 0.0,1.0);
-        m->mat_reflectance[matI_] = rand_clip(m->mat_reflectance[matI_], req.noise[8*i+3], 0.0,1.0);
-        for(int i=0; i<4; i++)
-          m->mat_rgba[4*matI_+i] = rand_clip(m->mat_rgba[4*matI_+i], req.noise[8*i+4+i], 0.0,1.0);
-          
-        res.ok.push_back(true);
-      }
-      else res.ok.push_back(false);
-    }
-  
-  return true;
-}
-
-double MujocoNode::rand_clip(const double mean, const double noise, const double lb, const double ub)
-{
-  if(mean == lb) return lb + (noise * rand_01());
-  else if(mean == ub) return ub - (noise * rand_01());
-  else return std::max(lb, std::min(mean + (noise * rand_pm1()), ub));
-}
-
-bool MujocoNode::randomize_physical_cb(mujoco_ros::RandomizePhysicalAttribute::Request& req, mujoco_ros::RandomizePhysicalAttribute::Response& res)
-{
-  res.ok.clear();
-  
-  // get body indices, check joint data lengths
-  int nb_ = (int)req.body_names.size(), bI_[nb_], nj_cumsum_=0;
-  for(int i=0; i<nb_; i++)
-  {
-    bI_[i] = mj_name2id(m, mjOBJ_BODY, req.body_names[i].c_str());
-    if(bI_[i] != -1) nj_cumsum_ += m->body_jntnum[bI_[i]];
-    else return true; 
-  }
-  
-  // randomize if total lengths match
-  if((nj_cumsum_ == (int)req.noise.size()) && (nb_ == (int)req.hold_6dof_children.size()))
-  {
-    // bodies
-    int noiseI_ = 0;
-    for(int i=0; i<nb_; i++)
-    {
-      if(m->body_jntnum[bI_[i]] == 0) res.ok.push_back(false);
-      else
-      {
-        res.ok.push_back(true);
-        JointIndex jI_; jI_.I = m->body_jntadr[bI_[i]];
-        for(int j=0; j<m->body_jntnum[bI_[i]]; j++)
-        {
-          jI_.p = m->jnt_qposadr[jI_.I+j]; jI_.v = m->jnt_dofadr[jI_.I+j];
-          d->qpos[jI_.p] += req.noise[noiseI_++] * rand_pm1();
-          d->qvel[jI_.v] = 0.0;
-        }
-      }
-    }
-    
-    // children, assumes 6 joints [ tx,ty,tz, rx,ry,rz ]
-    rand_child_fix.clear();
-    for(int p=0; p<nb_; p++)
-      if(req.hold_6dof_children[p])
-      {
-        for(int b=0; b<m->nbody; b++)
-          if(rand_childOK(b, bI_[p]))
-          {
-            PCtf pc_;
-            pc_.p_bI = m->body_parentid[b]; // parent body index
-            xpose_to_tf(m,d, pc_.world_c, b); // child pose wrt world
-            for(int j=0; j<6; j++) // child joint indices
-            {
-              pc_.jpI[j] = m->jnt_qposadr[m->body_jntadr[b]+j];
-              pc_.jvI[j] = m->jnt_dofadr[m->body_jntadr[b]+j];
-            }
-            
-            rand_child_fix.push_back(pc_);
-          }
-      }
-  }
-  
-  return true;
-}
-
-bool MujocoNode::rand_childOK(const int cI, const int pI)
-{
-  bool lineage_ = false; int pI_ = cI;
-  while(pI_ != 0)
-  {
-    pI_ = m->body_parentid[pI_];
-    if(pI_ == pI) { lineage_ = true; break; }
-  }
-  
-  return (lineage_ && (m->body_jntnum[cI] == 6));
-}
-
-void MujocoNode::handle_randomization()
-{
-  if(!rand_child_fix.empty())
-    if(rand_proc_now)
-    {
-      for(size_t i=0; i<rand_child_fix.size(); i++)
-        rand_child_pose_fix(rand_child_fix[i]);
-      rand_child_fix.clear(); rand_proc_now = false;
-    }
-    else rand_proc_now = true;
-}
-
-void MujocoNode::rand_child_pose_fix(PCtf& pc)
-{
-  // relative p->c pose
-  xpose_to_tf(m,d, pc.world_p, pc.p_bI);
-  tf::Transform rp_tf_ = pc.world_p.inverse() * pc.world_c;
-  // euler rotation
-  tf::Matrix3x3 m_(rp_tf_.getRotation());
-  double eul_[3]; m_.getRPY(eul_[0], eul_[1], eul_[2]);
-  
-  // adjust child joint positions
-  for(int i=0; i<3; i++)
-  {
-    d->qpos[pc.jpI[i]] = rp_tf_.getOrigin()[i]; // slide joint
-    d->qpos[pc.jpI[3+i]] = eul_[i]; // hinge joint
-  }
-  // zero child joint velocities
-  for(int j=0; j<6; j++) d->qvel[pc.jvI[j]] = 0.0;
 }
 
 
@@ -462,7 +320,7 @@ bool MujocoNode::get_brelpose_cb(mujoco_ros::GetRelativePoseBodies::Request& req
 void MujocoNode::publish_cam_rgb(mjrRect& viewport)
 {
   // render RGB off-screen
-  cam.fixedcamid = ext_camI; cam.type = mjCAMERA_FIXED;
+  cam.fixedcamid = ros_camI; cam.type = mjCAMERA_FIXED;
   mjr_setBuffer(mjFB_OFFSCREEN, &con);
   mjv_updateScene(m, d, &opt, NULL, &cam, mjCAT_ALL, &scn);
   mjr_render(viewport, &scn, &con);
@@ -474,7 +332,7 @@ void MujocoNode::publish_cam_rgb(mjrRect& viewport)
   // publish
   sensor_msgs::Image rgb_msg_;
   fill_rgb_image_msg(rgb_msg_, rgb_buf_raw_,rgb_buflen_);
-  ext_cam_pub.publish(rgb_msg_);
+  ros_cam_pub.publish(rgb_msg_);
   
   // restore rendering to onscreen abstract camera
   cam.fixedcamid = -1; cam.type = mjCAMERA_FREE;
@@ -486,7 +344,7 @@ void MujocoNode::fill_rgb_image_msg(sensor_msgs::Image& msg,
 {
   // other data fields
   msg.header.stamp = ros::Time::now();
-  msg.header.frame_id = ext_cam_name;
+  msg.header.frame_id = ros_cam_name;
   msg.encoding = "rgb8";
   msg.width = GLFW_W; msg.height = GLFW_H;
   msg.step = msg.width * GLFW_C;

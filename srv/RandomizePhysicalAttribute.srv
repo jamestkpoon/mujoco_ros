@@ -2,4 +2,4 @@ string[] body_names
 float64[] noise
 bool[] hold_6dof_children
 ---
-bool[] ok
+#bool[] ok

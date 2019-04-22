@@ -34,6 +34,7 @@ class FreeBodyTracker
   
     double dt;
     std::vector<FreeBody> free_bodies; int N_FB;
+    
 };
 
 

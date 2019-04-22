@@ -158,10 +158,12 @@ include_directories(
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
  #add_executable(mujoco_test src/mujoco_test.cpp)
-add_executable(mujoco_node src/mujoco_node.cpp src/common.cpp
+add_executable(mujoco_node
+  src/mujoco_node.cpp src/common.cpp
   src/ur5.cpp src/gripper.cpp
   src/freebody_joint_tracking.cpp
   src/threaded_body_locking.cpp
+  src/randomization.cpp
 )
 
 ## Rename C++ executable without prefix

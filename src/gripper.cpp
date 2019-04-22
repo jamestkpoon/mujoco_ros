@@ -104,7 +104,7 @@ void Gripper::grip_cb(const std_msgs::Bool& msg)
         
 
 
-//// equalities
+//// other
 
 void Gripper::lock_default_pose(mjModel* m, mjData* d, const int fI)
 {
@@ -131,8 +131,6 @@ void Gripper::set_weld_relpose(mjModel* m, mjData* d, const int weldI)
 }
 
 
-
-//// grasping
 
 bool Gripper::grasp_checks(mjModel* m, mjData* d)
 {

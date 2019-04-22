@@ -30,6 +30,10 @@ void rel_pose_as_tuple(mjModel* m, mjData* d, std::vector<double>& tup, const in
 
 double wrap_pi_diff(const double x);
 
+double rand_01();
+double rand_pm1();
+double rand_clip(const double mean, const double noise, const double lb, const double ub);
+
 
 
 #endif

@@ -45,3 +45,23 @@ double wrap_pi_diff(const double x)
   else if(x < 0.0) return complement_;
   else return -complement_;
 }
+
+
+
+double rand_01()
+{
+  // https://stackoverflow.com/a/6219525
+  return (double)rand() / (double)((unsigned)RAND_MAX);
+}
+
+double rand_pm1()
+{
+  return 2*rand_01() - 1.0;
+}
+
+double rand_clip(const double mean, const double noise, const double lb, const double ub)
+{
+  if(mean == lb) return lb + (noise * rand_01());
+  else if(mean == ub) return ub - (noise * rand_01());
+  else return std::max(lb, std::min(mean + (noise * rand_pm1()), ub));
+}

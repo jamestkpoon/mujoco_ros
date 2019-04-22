@@ -1,4 +1,4 @@
 string[] material_names
 float64[] noise
 ---
-bool[] ok
+#bool[] ok

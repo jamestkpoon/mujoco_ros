@@ -23,7 +23,8 @@ struct ThreadedBodyLocker
   
   public:
   
-    ThreadedBodyLocker(ros::NodeHandle& nh);
+    ThreadedBodyLocker(ros::NodeHandle& nh,
+      const double sim_period);
     ~ThreadedBodyLocker() {}
     
     bool init();
@@ -44,7 +45,7 @@ struct ThreadedBodyLocker
     
     // mujoco
     std::vector<ThreadedConnection> threaded_connections;
-    double JNT_LOCK_TOL;
+    double JNT_LOCK_TOL, dt;
   
 };
 

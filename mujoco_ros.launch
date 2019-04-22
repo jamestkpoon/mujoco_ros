@@ -7,7 +7,7 @@
         start_time: 0.0
         FPS: 60
         
-        ext_cam_name: "ros_cam"
+        ros_cam_name: "ros_cam"
         free_bodies: [ "base", "nut" ]
         graspable_bodies: [ "nut" ]
       </rosparam>
