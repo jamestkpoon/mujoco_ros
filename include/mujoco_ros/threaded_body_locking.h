@@ -13,7 +13,8 @@
 
 struct ThreadedConnection
 {
-  int bI; double pitch; JointIndex jI[6];
+  int bI; double pitch;
+  std::vector<int> jord; JointIndex jI[6];
 };
 
 

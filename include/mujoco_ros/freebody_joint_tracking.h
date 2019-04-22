@@ -7,11 +7,16 @@
 
 
 
+struct TrackingData
+{
+  int bI; std::vector<double> pos_tup,pos_tup_l, vel_tup;
+};
+
+
 struct FreeBody
 {
   int bI, pbI; JointIndex jI[6];
-  tf::Transform defpose; std::vector<double> last_pc_tup;
-  std::vector<bool> track, zvels;
+  TrackingData parent_tracker;
 };
 
 
@@ -28,10 +33,13 @@ class FreeBodyTracker
       const std::vector<std::string>& freebody_names);
     void proc(mjModel* m, mjData* d);
     
-    bool set_track_flags(const int bI, const std::vector<bool>& track);
+    bool set_tracking_parent(const int bI, const int tpbI);
+    bool get_tracking_pos(const int bI, std::vector<double>& tup);
+    bool get_tracking_vel(const int bI, std::vector<double>& tup);
     bool shift(mjModel* m, mjData* d, const int bI, const tf::Transform& w_t_tf);
   
   private:
+    int find_bI(const int bI);
   
     double dt;
     std::vector<FreeBody> free_bodies; int N_FB;

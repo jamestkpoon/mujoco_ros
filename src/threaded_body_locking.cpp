@@ -28,11 +28,18 @@ void ThreadedBodyLocker::proc(mjModel* m, mjData* d,
     handle_request(m,d, fb_tracker, srv_requests[i]); 
   srv_requests.clear();
   
-  // handle connections
+  // handle threaded connections
   for(int i=0; i<(int)threaded_connections.size(); i++)
   {
-    d->qvel[threaded_connections[i].jI[0].v] = d->qvel[threaded_connections[i].jI[1].v] * threaded_connections[i].pitch;
-    d->qpos[threaded_connections[i].jI[0].p] += d->qvel[threaded_connections[i].jI[0].v] * dt;
+    ThreadedConnection& tc_ = threaded_connections[i];
+
+    // position, velocity tuples from free body tracking
+    std::vector<double> pos_tup_; fb_tracker->get_tracking_pos(tc_.bI, pos_tup_);
+    std::vector<double> vel_tup_; fb_tracker->get_tracking_vel(tc_.bI, vel_tup_);
+    
+    // new pose wrt parent
+    d->qvel[tc_.jI[0].v] = vel_tup_[tc_.jord[1]] * tc_.pitch;
+    d->qpos[tc_.jI[0].p] += d->qvel[tc_.jI[0].v] * dt;
   }
 }
 
@@ -56,29 +63,28 @@ bool ThreadedBodyLocker::handle_request(mjModel* m, mjData* d,
   if(req.attach_flag)
   {
     // joint indexing, assumes 6 joints [ tx,ty,tz, rx,ry,rz ]   
-    std::vector<int> jI_ord_; 
+    ThreadedConnection tc_;
+    
     if(req.axis == "x")
     {
       int ord_[6] = { 0,3, 1,4, 2,5 };
-      jI_ord_ = std::vector<int>(ord_,ord_+6);
+      tc_.jord = std::vector<int>(ord_,ord_+6);
     }
     else if(req.axis == "y")
     {
       int ord_[6] = { 1,4, 0,3, 2,5 };
-      jI_ord_ = std::vector<int>(ord_,ord_+6);
+      tc_.jord = std::vector<int>(ord_,ord_+6);
     }
     else if(req.axis == "z")
     {
       int ord_[6] = { 2,5, 0,3, 1,4 };
-      jI_ord_ = std::vector<int>(ord_,ord_+6);
+      tc_.jord = std::vector<int>(ord_,ord_+6);
     }
     else return false;
     
-    ThreadedConnection tc_;
-    tc_.bI = req_bI_; tc_.pitch = req.pitch;
     for(int i=0; i<6; i++)
     {
-      tc_.jI[i].I = m->body_jntadr[tc_.bI] + jI_ord_[i];
+      tc_.jI[i].I = m->body_jntadr[tc_.bI] + tc_.jord[i];
       tc_.jI[i].p = m->jnt_qposadr[tc_.jI[i].I];
       tc_.jI[i].v = m->jnt_dofadr[tc_.jI[i].I];
     }
@@ -90,14 +96,14 @@ bool ThreadedBodyLocker::handle_request(mjModel* m, mjData* d,
       m->jnt_range[2*tc_.jI[i].I+1] = d->qpos[tc_.jI[i].p] + JNT_LOCK_TOL;
       m->jnt_limited[tc_.jI[i].I] = true; d->qvel[tc_.jI[i].v] = 0.0;
     }
+
+    tc_.bI = req_bI_; tc_.pitch = req.pitch;
     
     // append connection
     threaded_connections.push_back(tc_);
     
-    // joint tracking flags
-    std::vector<bool> track_flags_(6, true);
-    track_flags_[jI_ord_[0]] = false; // stop tracking thread translation axis
-    fb_tracker->set_track_flags(tc_.bI, track_flags_);
+    // set tracking parent in free body tracking
+    fb_tracker->set_tracking_parent(req_bI_, m->body_parentid[req_bI_]);
     
     return true;
   }
@@ -105,15 +111,19 @@ bool ThreadedBodyLocker::handle_request(mjModel* m, mjData* d,
   {
     for(size_t i=0; i<threaded_connections.size(); i++)
       if(threaded_connections[i].bI == req_bI_)
-      {
+      {        
+        // zero translational velocity
+        d->qvel[threaded_connections[i].jI[0].v] = 0.0;
+      
         // free other joints
         for(int j=2; j<6; j++)
           m->jnt_limited[threaded_connections[i].jI[j].I] = false;
+
+        // clear tracking parent in free body tracking
+        fb_tracker->set_tracking_parent(req_bI_, -1);
+          
         // delete connection
         threaded_connections.erase(threaded_connections.begin()+i);
-        
-        // reset joint tracking flags
-        fb_tracker->set_track_flags(req_bI_, std::vector<bool>(6,true));
         
         return true;
       }

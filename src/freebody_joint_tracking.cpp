@@ -27,12 +27,11 @@ bool FreeBodyTracker::init(mjModel* m, mjData* d,
         fb_.jI[j].p = m->jnt_qposadr[fb_.jI[j].I];
         fb_.jI[j].v = m->jnt_dofadr[fb_.jI[j].I];
       }
-      free_bodies.push_back(fb_);
-//      xpose_to_tf(m,d, fb_.defpose, bI_); // world pose
-//      fb_.track = std::vector<bool>(6, true);
-//      fb_.zvels = std::vector<bool>(6, true);
       
-
+      fb_.parent_tracker.bI = -1;
+      fb_.parent_tracker.vel_tup.clear();
+      
+      free_bodies.push_back(fb_);
     }
   }
   
@@ -43,97 +42,92 @@ bool FreeBodyTracker::init(mjModel* m, mjData* d,
 
 void FreeBodyTracker::proc(mjModel* m, mjData* d)
 {
-//  for(int b=0; b<N_FB; b++)
-//  {
-    // new parent pose -> starting child pose
-//    tf::Transform w_p_tf_; xpose_to_tf(m,d, w_p_tf_, free_bodies[b].pbI);
-//    tf::Transform p_dc_tf_ = w_p_tf_.inverse() * free_bodies[b].defpose;
-//    std::vector<double> p_dc_tup_; transform_to_6tuple(p_dc_tup_, p_dc_tf_);
-//    // new parent pose -> new child pose
-//    std::vector<double> p_nc_tup_;
-//    rel_pose_as_tuple(m,d, p_nc_tup_, free_bodies[b].pbI,free_bodies[b].bI);
-//    
-//    // local differential tuple for joint velocities
-//    std::vector<double> diff_(6, 0.0);
-//    for(int i=0; i<6; i++)
-//      if(free_bodies[b].zvels[i]) free_bodies[b].zvels[i] = false;
-//      else diff_[i] = p_nc_tup_[i] - free_bodies[b].last_pc_tup[i];
-
-//    free_bodies[b].last_pc_tup = p_nc_tup_;
-//    
-//    // set slide joint properties
-//    for(int i=0; i<3; i++)
-//      if(free_bodies[b].track[i])
-//      {
-//        d->qpos[free_bodies[b].jI[i].p] = p_nc_tup_[i] - p_dc_tup_[i];
-//        d->qvel[free_bodies[b].jI[i].v] = diff_[i] * dt;
-//      }
-
-//    if(std::string(mj_id2name(m, mjOBJ_BODY, free_bodies[b].bI)) == "nut")
-//    {
-//      if(!free_bodies[b].track[0])
-//      {
-//        ROS_INFO("blooorg");
-//        ROS_INFO("%f,%f,%f", d->qpos[free_bodies[b].jI[0].p],d->qpos[free_bodies[b].jI[1].p],d->qpos[free_bodies[b].jI[2].p]);
-//        for(int i=0; i<6; i++)
-//        {
-//          ROS_INFO("%f, %f", p_dc_tup_[i], p_nc_tup_[i]);
-//        }
-//       }
-//    }
-//    
-//    // set hinge joint properties
-//    for(int i=3; i<6; i++)
-//      if(free_bodies[b].track[i])
-//      {
-//        d->qpos[free_bodies[b].jI[i].p] = p_nc_tup_[i] - p_dc_tup_[i];
-//        d->qvel[free_bodies[b].jI[i].v] = wrap_pi_diff(diff_[i]) * dt;
-//      }
-//  }
+  for(int b=0; b<N_FB; b++)
+    if(free_bodies[b].parent_tracker.bI != -1)
+    {
+      // update tracking data where set
+      TrackingData& td_ = free_bodies[b].parent_tracker;
+      rel_pose_as_tuple(m,d, td_.pos_tup, td_.bI, free_bodies[b].bI);
+      
+      if(td_.vel_tup.empty()) td_.vel_tup = std::vector<double>(6, 0.0);
+      else
+        for(int j=0; j<3; j++)
+        {
+          td_.vel_tup[j] = (td_.pos_tup[j] - td_.pos_tup_l[j]) / dt;
+          td_.vel_tup[3+j] = wrap_pi_diff(td_.pos_tup[3+j] - td_.pos_tup_l[3+j]) / dt;
+        }
+      
+      td_.pos_tup_l = td_.pos_tup;
+    }
 }
 
 
 
-bool FreeBodyTracker::set_track_flags(const int bI, const std::vector<bool>& track)
+//// other
+
+bool FreeBodyTracker::set_tracking_parent(const int bI, const int tpbI)
 {
-//  for(int i=0; i<N_FB; i++)
-//    if((free_bodies[i].bI == bI) && (track.size() == 6))
-//    {
-//      for(int j=0; j<6; j++)
-//        free_bodies[i].zvels[j] = (!free_bodies[i].zvels[j] && track[j]);
-//      
-//      free_bodies[i].track = track;
-//      
-//      return true;
-//    }
-//     
-//  return false;  
+  int i_ = find_bI(bI);
+  if(i_ == -1) return false;
+  
+  free_bodies[i_].parent_tracker.bI = tpbI;
+  
+  if(tpbI == -1) free_bodies[i_].parent_tracker.vel_tup.clear();
+  
+  return true;
+}
+
+bool FreeBodyTracker::get_tracking_pos(const int bI, std::vector<double>& tup)
+{
+  int i_ = find_bI(bI);
+  if(i_ == -1) return false;
+  
+  tup = free_bodies[i_].parent_tracker.pos_tup;
+  
+  return true;
+}
+
+bool FreeBodyTracker::get_tracking_vel(const int bI, std::vector<double>& tup)
+{
+  int i_ = find_bI(bI);
+  if(i_ == -1) return false;
+  
+  tup = free_bodies[i_].parent_tracker.vel_tup;
+  
+  return true;
 }
 
 bool FreeBodyTracker::shift(mjModel* m, mjData* d, const int bI, const tf::Transform& w_t_tf)
 {
-   for(int b=0; b<N_FB; b++)
-    if(free_bodies[b].bI == bI)
-    {
-      // parent -> child
-      std::vector<double> p_c_tup_;
-      rel_pose_as_tuple(m,d, p_c_tup_, free_bodies[b].pbI, bI);
-      // parent -> target
-      tf::Transform w_p_tf_; xpose_to_tf(m,d, w_p_tf_, free_bodies[b].pbI);
-      tf::Transform p_t_tf_ = w_p_tf_.inverse() * w_t_tf;
-      std::vector<double> p_t_tup_; transform_to_6tuple(p_t_tup_, p_t_tf_);
-      
-      // shift corresponding joints
-      for(int j=0; j<3; j++)
-      {
-        d->qpos[free_bodies[b].jI[j].p] += p_t_tup_[j] - p_c_tup_[j]; // slide
-        d->qpos[free_bodies[b].jI[3+j].p] += wrap_pi_diff(p_t_tup_[3+j] - p_c_tup_[3+j]); // hinge
-        
-        d->qvel[free_bodies[b].jI[j].v] = free_bodies[b].jI[3+j].v = 0.0; // velocities
-      }
-      
-      return true;
-    }
+  int i_ = find_bI(bI);
+  if(i_ == -1) return false;
+  
+  FreeBody& fb_ = free_bodies[i_];
+  
+  // parent -> child
+  std::vector<double> p_c_tup_;
+  rel_pose_as_tuple(m,d, p_c_tup_, fb_.pbI, bI);
+  // parent -> target
+  tf::Transform w_p_tf_; xpose_to_tf(m,d, w_p_tf_, fb_.pbI);
+  tf::Transform p_t_tf_ = w_p_tf_.inverse() * w_t_tf;
+  std::vector<double> p_t_tup_; transform_to_6tuple(p_t_tup_, p_t_tf_);
+  
+  // shift joints accordingly
+  for(int j=0; j<3; j++)
+  {
+    d->qpos[fb_.jI[j].p] += p_t_tup_[j] - p_c_tup_[j]; // slide
+    d->qpos[fb_.jI[3+j].p] += wrap_pi_diff(p_t_tup_[3+j] - p_c_tup_[3+j]); // hinge
     
-    return false; 
+    d->qvel[fb_.jI[j].v] = fb_.jI[3+j].v = 0.0; // velocities
+  }
+  
+  return true;
+}
+
+int FreeBodyTracker::find_bI(const int bI)
+{
+  for(int i=0; i<N_FB; i++)
+    if(free_bodies[i].bI == bI) return i;
+    
+  return -1;
 }
