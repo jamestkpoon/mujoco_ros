@@ -35,11 +35,12 @@ void ThreadedBodyLocker::proc(mjModel* m, mjData* d,
 
     // position, velocity tuples from free body tracking
     std::vector<double> pos_tup_, vel_tup_;
-    fb_tracker->get_tracking_data(tc_.bI, pos_tup_,vel_tup_);
-    
-    // new pose wrt parent
-    d->qvel[tc_.jI[0].v] = vel_tup_[tc_.jord[1]] * tc_.pitch;
-    d->qpos[tc_.jI[0].p] += d->qvel[tc_.jI[0].v] * dt;
+    if(fb_tracker->get_tracking_data(tc_.bI, pos_tup_,vel_tup_))
+    {
+      // update relevant joint data
+      d->qvel[tc_.jI[0].v] = vel_tup_[tc_.jord[1]] * tc_.pitch;
+      d->qpos[tc_.jI[0].p] += d->qvel[tc_.jI[0].v] * dt;
+    }
   }
 }
 
