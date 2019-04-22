@@ -122,7 +122,7 @@ std::vector<bool> Randomizer::handle_request_phys(mjModel* m, mjData* d,
         
         res_.push_back(true);
 
-        // children, assumes 6 joints [ tx,ty,tz, rx,ry,rz ]
+        // children
         for(int p=0; p<nb_; p++)
           if(req.hold_6dof_children[p])
             for(int b=0; b<m->nbody; b++)

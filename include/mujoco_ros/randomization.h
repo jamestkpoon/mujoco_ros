@@ -47,12 +47,11 @@ class Randomizer
     std::vector<mujoco_ros::RandomizeTexturalAttribute::Request> randtex_req;
     std::vector<mujoco_ros::RandomizePhysicalAttribute::Request> randphys_req;
     
-    // mujoco + free body tracker
+    // mujoco
     bool childOK(mjModel* m, mjData* d, const int cI, const int pI);
     void restore_child_poses(mjModel* m, mjData* d, FreeBodyTracker* fb_tracker);
     
-    std::vector<ChildTF> childTF_shift;
-    delay_trigger childTF_trigger;
+    std::vector<ChildTF> childTF_shift; delay_trigger childTF_trigger;
     
 };
 
