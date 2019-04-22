@@ -11,7 +11,7 @@ struct FreeBody
 {
   int bI, pbI; JointIndex jI[6];
   tf::Transform defpose; std::vector<double> last_pc_tup;
-  std::vector<bool> track;
+  std::vector<bool> track, zvels;
 };
 
 
@@ -29,6 +29,7 @@ class FreeBodyTracker
     void proc(mjModel* m, mjData* d);
     
     bool set_track_flags(const int bI, const std::vector<bool>& track);
+    bool shift(mjModel* m, mjData* d, const int bI, const tf::Transform& w_t_tf);
   
   private:
   
