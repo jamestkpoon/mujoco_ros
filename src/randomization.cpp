@@ -6,6 +6,9 @@ Randomizer::Randomizer(ros::NodeHandle& nh)
 {
   randtex_srv = nh.advertiseService("rand/textural", &Randomizer::randomize_textural_cb, this);
   randphys_srv = nh.advertiseService("rand/physical", &Randomizer::randomize_physical_cb, this);
+
+  undotex_srv = nh.advertiseService("rand/undo/textural", &Randomizer::undo_tex_cb, this);
+  undophys_srv = nh.advertiseService("rand/undo/physical", &Randomizer::undo_phys_cb, this);
 }
 
 
@@ -13,9 +16,13 @@ Randomizer::Randomizer(ros::NodeHandle& nh)
 bool Randomizer::init()
 {
   randtex_req.clear(); randphys_req.clear();
-  childTF_shift.clear();
+
+  childTF_shift.clear();  
+  childTF_shift_trigger.next = childTF_shift_trigger.now = false;
+  childTF_undo_trigger.next = childTF_undo_trigger.now = false;
   
-  childTF_trigger.next = childTF_trigger.now = false;
+  tex_shifts.clear(); undo_tex_shifts = false;
+  phys_shifts.clear(); undo_phys_shifts = false;
   
   return true;
 }
@@ -23,26 +30,28 @@ bool Randomizer::init()
 void Randomizer::proc(mjModel* m, mjData* d,
   FreeBodyTracker* fb_tracker)
 {
-  // textural randomization requests
+  // textural randomizations
+  if(!randtex_req.empty() && (!undo_tex_shifts && !tex_shifts.empty())) tex_shifts.clear();
+  
   for(int i=0; i<(int)randtex_req.size(); i++)
     handle_request_tex(m,d, randtex_req[i]);
   randtex_req.clear();
+
+  if(undo_tex_shifts)
+    { undo_randtex(m,d); undo_tex_shifts = false; }
   
-  // physical randomization requests
+  // physical randomizations
+  if(!randphys_req.empty() && (!undo_phys_shifts && !phys_shifts.empty()))
+    { phys_shifts.clear(); childTF_shift.clear(); }
+  
   for(int i=0; i<(int)randphys_req.size(); i++)
     handle_request_phys(m,d, randphys_req[i]);
   randphys_req.clear();
+  handle_child_repose_delay(m,d, fb_tracker, childTF_shift_trigger);
   
-  // from previous sim step
-  if(childTF_trigger.next)
-  {
-    if(childTF_trigger.now)
-    {
-      restore_child_poses(m,d, fb_tracker);
-      childTF_trigger.next = childTF_trigger.now = false;
-    }
-    else childTF_trigger.now = true;
-  }
+  if(undo_phys_shifts)
+    { undo_randphys(m,d); undo_phys_shifts = false; }
+  handle_child_repose_delay(m,d, fb_tracker, childTF_undo_trigger);  
 }
 
 
@@ -67,26 +76,36 @@ std::vector<bool> Randomizer::handle_request_tex(mjModel* m, mjData* d, const mu
 {
   std::vector<bool> res_;
 
-  if(req.noise.size() == 8*req.material_names.size())
+  if(req.noise.size() == 8*req.material_names.size()) 
     for(int i=0; i<(int)req.material_names.size(); i++)
     {
       int matI_ = mj_name2id(m, mjOBJ_MATERIAL, req.material_names[i].c_str());
       if(matI_ != -1)
       {
+        // backup
+        tex_shift tex_shift_; tex_shift_.matI = matI_;
+        tex_shift_.essr[0] = m->mat_emission[matI_];
+        tex_shift_.essr[1] = m->mat_specular[matI_];
+        tex_shift_.essr[2] = m->mat_shininess[matI_];
+        tex_shift_.essr[3] = m->mat_reflectance[matI_];
+        for(int c=0; c<4; c++) tex_shift_.rgba[c] = m->mat_rgba[4*matI_+c];
+          
+        tex_shifts.push_back(tex_shift_);
+        
         // req.noise: [ emission*1, specular*1, shininess*1, reflectance*1, rgba*4 ] * N_material_names
         m->mat_emission[matI_] = rand_clip(m->mat_emission[matI_], req.noise[8*i+0], 0.0,1.0);
         m->mat_specular[matI_] = rand_clip(m->mat_specular[matI_], req.noise[8*i+1], 0.0,1.0);
         m->mat_shininess[matI_] = rand_clip(m->mat_shininess[matI_], req.noise[8*i+2], 0.0,1.0);
         m->mat_reflectance[matI_] = rand_clip(m->mat_reflectance[matI_], req.noise[8*i+3], 0.0,1.0);
-        for(int i=0; i<4; i++)
-          m->mat_rgba[4*matI_+i] = rand_clip(m->mat_rgba[4*matI_+i], req.noise[8*i+4+i], 0.0,1.0);
+        for(int c=0; c<4; c++)
+          m->mat_rgba[4*matI_+c] = rand_clip(m->mat_rgba[4*matI_+c], req.noise[8*i+4+c], 0.0,1.0);
           
         res_.push_back(true);
       }
       else res_.push_back(false);
     }
     
-   return res_;
+  return res_;
 }
 
 std::vector<bool> Randomizer::handle_request_phys(mjModel* m, mjData* d,
@@ -95,11 +114,11 @@ std::vector<bool> Randomizer::handle_request_phys(mjModel* m, mjData* d,
   std::vector<bool> res_;
   
   // get body indices, check joint data lengths
-  int nb_ = (int)req.body_names.size(), bI_[nb_], nj_cumsum_=0;
+  int nb_ = (int)req.body_names.size(), bI_[nb_], nj_[nb_], nj_cumsum_=0;
   for(int i=0; i<nb_; i++)
   {
     bI_[i] = mj_name2id(m, mjOBJ_BODY, req.body_names[i].c_str());
-    if(bI_[i] != -1) nj_cumsum_ += m->body_jntnum[bI_[i]];
+    if(bI_[i] != -1) { nj_[i] = m->body_jntnum[bI_[i]]; nj_cumsum_ += nj_[i]; }
     else return res_;
   }
   
@@ -108,18 +127,27 @@ std::vector<bool> Randomizer::handle_request_phys(mjModel* m, mjData* d,
   {
     int noiseI_ = 0;
     for(int i=0; i<nb_; i++)
+    {
       if(m->body_jntnum[bI_[i]] == 0) res_.push_back(false);
       else
       {
+        // backup struct
+        phys_shift phys_shift_;
+        phys_shift_.jI.resize(nj_[i]);
+        phys_shift_.offsets.resize(nj_[i]);
+        
         // parent body
-        JointIndex jI_; jI_.I = m->body_jntadr[bI_[i]];
-        for(int j=0; j<m->body_jntnum[bI_[i]]; j++)
+        for(int j=0; j<nj_[i]; j++)
         {
+          JointIndex& jI_ = phys_shift_.jI[j]; jI_.I = m->body_jntadr[bI_[i]];
           jI_.p = m->jnt_qposadr[jI_.I+j]; jI_.v = m->jnt_dofadr[jI_.I+j];
-          d->qpos[jI_.p] += req.noise[noiseI_++] * rand_pm1();
+          
+          phys_shift_.offsets[j] = req.noise[noiseI_++] * rand_pm1();
+          d->qpos[jI_.p] += phys_shift_.offsets[j];
           d->qvel[jI_.v] = 0.0;
         }
         
+        phys_shifts.push_back(phys_shift_);
         res_.push_back(true);
 
         // children
@@ -134,13 +162,60 @@ std::vector<bool> Randomizer::handle_request_phys(mjModel* m, mjData* d,
                 childTF_shift.push_back(pc_);
               }
       }
-      
-    childTF_trigger.next = !childTF_shift.empty();
+    }
+    
+    childTF_shift_trigger.next = !childTF_shift.empty();
   }
   
   return res_;
 }
 
+
+
+bool Randomizer::undo_tex_cb(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res)
+{
+  undo_tex_shifts = !tex_shifts.empty();
+  
+  return true;
+}
+
+bool Randomizer::undo_phys_cb(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res)
+{
+  undo_phys_shifts = !phys_shifts.empty();
+  
+  return true;
+}
+
+void Randomizer::undo_randtex(mjModel* m, mjData* d)
+{
+  for(int i=(int)tex_shifts.size()-1; i>-1; i--) // go backwards
+  {
+    tex_shift& ts_ = tex_shifts[i];
+    m->mat_emission[ts_.matI] = ts_.essr[0];
+    m->mat_specular[ts_.matI] = ts_.essr[1];
+    m->mat_shininess[ts_.matI] = ts_.essr[2];
+    m->mat_reflectance[ts_.matI] = ts_.essr[3];
+    for(int c=0; c<4; c++) m->mat_rgba[4*ts_.matI+c] = ts_.rgba[c];      
+  }
+  
+  tex_shifts.clear();
+}
+
+void Randomizer::undo_randphys(mjModel* m, mjData* d)
+{
+  for(int i=(int)phys_shifts.size()-1; i>-1; i--)
+  {
+    phys_shift& ps_ = phys_shifts[i];
+    for(int j=0; j<(int)ps_.jI.size(); j++)
+    {
+      d->qpos[ps_.jI[j].p] -= ps_.offsets[j];
+      d->qvel[ps_.jI[j].v] = 0.0;
+    }
+  }
+  phys_shifts.clear();
+
+  childTF_undo_trigger.next = !childTF_shift.empty();
+}
 
 
 //// other
@@ -165,10 +240,17 @@ bool Randomizer::childOK(mjModel* m, mjData* d, const int cI, const int pI)
   return ancestry_;
 }
 
-void Randomizer::restore_child_poses(mjModel* m, mjData* d, FreeBodyTracker* fb_tracker)
+void Randomizer::handle_child_repose_delay(mjModel* m, mjData* d,
+  FreeBodyTracker* fb_tracker, delay_trigger& trigger)
 {
-  // children pose fixing
-  for(int i=0; i<(int)childTF_shift.size(); i++)
-    fb_tracker->shift(m,d, childTF_shift[i].bI, childTF_shift[i].pose);
-  childTF_shift.clear();
+  if(trigger.next)
+  {
+    if(trigger.now)
+    {
+      for(int i=0; i<(int)childTF_shift.size(); i++)
+        fb_tracker->shift(m,d, childTF_shift[i].bI, childTF_shift[i].pose);
+      trigger.next = trigger.now = false;
+    }
+    else trigger.now = true;
+  }
 }
