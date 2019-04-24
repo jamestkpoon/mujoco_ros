@@ -13,6 +13,11 @@ Randomizer::Randomizer(ros::NodeHandle& nh)
   undophys_srv = nh.advertiseService("rand/undo/physical", &Randomizer::undo_phys_cb, this);
 }
 
+Randomizer::~Randomizer()
+{
+  delete rng;
+}
+
 
 
 bool Randomizer::init()

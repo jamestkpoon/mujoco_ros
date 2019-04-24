@@ -76,13 +76,15 @@ class RNG
 
 };
 
+
+
 class Randomizer
 {
 
   public:
   
     Randomizer(ros::NodeHandle& nh);
-    ~Randomizer() {}
+    ~Randomizer();
     
     bool init();
     void proc(mjModel* m, mjData* d,
