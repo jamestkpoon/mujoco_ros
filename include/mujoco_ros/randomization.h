@@ -11,6 +11,10 @@
 #include "mujoco_ros/RandomizePhysicalAttribute.h"
 #include "std_srvs/Empty.h"
 
+// RNG
+#include "boost/random.hpp"
+#include <boost/format.hpp>
+
 
 
 struct ChildTF
@@ -36,16 +40,55 @@ struct phys_shift
 
 
 
+class RNG
+{
+
+  public:
+    RNG(const int seed)
+    {
+      rng = boost::mt19937(seed);
+    }
+    ~RNG() {}
+    
+    double rand_01()
+    {
+      static boost::uniform_01<boost::mt19937> zeroone(rng);
+      return zeroone();
+    }
+
+    double rand_pm1()
+    {
+      return 2*rand_01() - 1.0;
+    }
+
+    double rand_clip(const double mean, const double noise, const double lb, const double ub)
+    {
+      if(mean == lb) return lb + (noise * rand_01());
+      else if(mean == ub) return ub - (noise * rand_01());
+      else return std::max(lb, std::min(mean + (noise * rand_pm1()), ub));
+    }
+  
+  
+  
+  private:
+  
+    boost::random::mt19937 rng;
+
+};
+
 class Randomizer
 {
 
   public:
+  
     Randomizer(ros::NodeHandle& nh);
     ~Randomizer() {}
     
     bool init();
     void proc(mjModel* m, mjData* d,
       FreeBodyTracker* fb_tracker);
+      
+      
   
   private:
 
@@ -74,6 +117,10 @@ class Randomizer
     
     std::vector<ChildTF> childTF_shift; delay_trigger childTF_shift_trigger, childTF_undo_trigger;
     std::vector<tex_shift> tex_shifts; std::vector<phys_shift> phys_shifts;
+    
+    // RNG
+    RNG* rng;
+    
 };
 
 

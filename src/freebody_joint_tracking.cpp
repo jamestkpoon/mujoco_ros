@@ -123,3 +123,14 @@ int FreeBodyTracker::find_bI(const int bI)
     
   return -1;
 }
+
+
+
+double wrap_pi_diff(const double x)
+{
+  double fx_ = fabs(x), complement_ = 2*M_PI - fx_;
+  
+  if(fx_ <= complement_) return x;
+  else if(x < 0.0) return complement_;
+  else return -complement_;
+}

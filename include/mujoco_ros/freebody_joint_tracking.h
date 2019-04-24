@@ -39,12 +39,18 @@ class FreeBodyTracker
     bool shift(mjModel* m, mjData* d, const int bI, const tf::Transform& w_t_tf);
   
   private:
+
     int find_bI(const int bI);
   
     double dt;
     std::vector<FreeBody> free_bodies; int N_FB;
     
 };
+
+
+
+double wrap_pi_diff(const double x);
+
 
 
 #endif

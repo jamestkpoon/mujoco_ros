@@ -28,12 +28,6 @@ void xpose_to_tf_rel(mjModel* m, mjData* d, tf::Transform& tf_out, const int pbI
 void transform_to_6tuple(std::vector<double>& tup, const tf::Transform& pose_tf);
 void rel_pose_as_tuple(mjModel* m, mjData* d, std::vector<double>& tup, const int pI, const int cI);
 
-double wrap_pi_diff(const double x);
-
-double rand_01();
-double rand_pm1();
-double rand_clip(const double mean, const double noise, const double lb, const double ub);
-
 
 
 #endif

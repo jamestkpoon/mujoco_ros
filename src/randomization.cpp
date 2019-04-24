@@ -4,6 +4,8 @@
 
 Randomizer::Randomizer(ros::NodeHandle& nh)
 {
+  rng = new RNG((int)ros::Time::now().toSec());
+
   randtex_srv = nh.advertiseService("rand/textural", &Randomizer::randomize_textural_cb, this);
   randphys_srv = nh.advertiseService("rand/physical", &Randomizer::randomize_physical_cb, this);
 
@@ -17,7 +19,7 @@ bool Randomizer::init()
 {
   randtex_req.clear(); randphys_req.clear();
 
-  childTF_shift.clear();  
+  childTF_shift.clear();
   childTF_shift_trigger.next = childTF_shift_trigger.now = false;
   childTF_undo_trigger.next = childTF_undo_trigger.now = false;
   
@@ -93,12 +95,12 @@ std::vector<bool> Randomizer::handle_request_tex(mjModel* m, mjData* d, const mu
         tex_shifts.push_back(tex_shift_);
         
         // req.noise: [ emission*1, specular*1, shininess*1, reflectance*1, rgba*4 ] * N_material_names
-        m->mat_emission[matI_] = rand_clip(m->mat_emission[matI_], req.noise[8*i+0], 0.0,1.0);
-        m->mat_specular[matI_] = rand_clip(m->mat_specular[matI_], req.noise[8*i+1], 0.0,1.0);
-        m->mat_shininess[matI_] = rand_clip(m->mat_shininess[matI_], req.noise[8*i+2], 0.0,1.0);
-        m->mat_reflectance[matI_] = rand_clip(m->mat_reflectance[matI_], req.noise[8*i+3], 0.0,1.0);
+        m->mat_emission[matI_] = rng->rand_clip(m->mat_emission[matI_], req.noise[8*i+0], 0.0,1.0);
+        m->mat_specular[matI_] = rng->rand_clip(m->mat_specular[matI_], req.noise[8*i+1], 0.0,1.0);
+        m->mat_shininess[matI_] = rng->rand_clip(m->mat_shininess[matI_], req.noise[8*i+2], 0.0,1.0);
+        m->mat_reflectance[matI_] = rng->rand_clip(m->mat_reflectance[matI_], req.noise[8*i+3], 0.0,1.0);
         for(int c=0; c<4; c++)
-          m->mat_rgba[4*matI_+c] = rand_clip(m->mat_rgba[4*matI_+c], req.noise[8*i+4+c], 0.0,1.0);
+          m->mat_rgba[4*matI_+c] = rng->rand_clip(m->mat_rgba[4*matI_+c], req.noise[8*i+4+c], 0.0,1.0);
           
         res_.push_back(true);
       }
@@ -142,7 +144,7 @@ std::vector<bool> Randomizer::handle_request_phys(mjModel* m, mjData* d,
           JointIndex& jI_ = phys_shift_.jI[j]; jI_.I = m->body_jntadr[bI_[i]];
           jI_.p = m->jnt_qposadr[jI_.I+j]; jI_.v = m->jnt_dofadr[jI_.I+j];
           
-          phys_shift_.offsets[j] = req.noise[noiseI_++] * rand_pm1();
+          phys_shift_.offsets[j] = req.noise[noiseI_++] * rng->rand_pm1();
           d->qpos[jI_.p] += phys_shift_.offsets[j];
           d->qvel[jI_.v] = 0.0;
         }
