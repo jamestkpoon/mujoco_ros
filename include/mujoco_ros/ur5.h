@@ -28,8 +28,6 @@ class UR5
     bool init(mjModel* m, mjData* d, ros::NodeHandle& nh,
       const std::vector<std::string>& joint_names);
     void proc(mjModel* m, mjData* d, ros::NodeHandle& nh);
-
-
     
   private:
   

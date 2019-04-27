@@ -4,6 +4,7 @@
 
 
 #include "mujoco_ros/common.h"
+#include "mujoco_ros/freebody_joint_tracking.h"
 
 // ROS
 #include "std_msgs/Bool.h"
@@ -27,9 +28,10 @@ class Gripper
     ~Gripper() {}
   
     bool init(mjModel* m, mjData* d, ros::NodeHandle& nh,
-        const std::vector<GripperFinger>& gf,
-        const int grasp_eq_idx, const std::vector<int>& graspable_geomI);
-    void proc(mjModel* m, mjData* d, ros::NodeHandle& nh);   
+      const std::vector<GripperFinger>& gf,
+      const int grasp_eq_idx, const std::vector<int>& graspable_geomI);
+    void proc(mjModel* m, mjData* d, ros::NodeHandle& nh,
+      FreeBodyTracker* fb_tracker);   
 
   private:
   
@@ -42,6 +44,7 @@ class Gripper
     // mujoco
     void lock_default_pose(mjModel* m, mjData* d, const int fI);
     void set_weld_relpose(mjModel* m, mjData* d, const int weldI);
+    void set_weld_relpose(mjModel* m, mjData* d, const int weldI, tf::Transform& tf_out);
     
     int N_FINGERS;
     double driver_torque, driver_min_pos;
@@ -52,9 +55,10 @@ class Gripper
     bool grasp_checks(mjModel* m, mjData* d);
     bool grasp_check(mjModel* m, mjData* d, const int target_gI);
     
-    int grasp_weldI, graspedI;
+    int grasp_weldI, grasped_bI;
     std::vector<int> graspable_gI, graspable_bI;
     std::vector<std::string> graspable_bodies;
+    tf::Transform graspedTF; bool fb_track;
     
 };
 

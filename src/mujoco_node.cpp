@@ -168,7 +168,7 @@ void MujocoNode::loop()
     
     // UR5 + gripper
     ur5->proc(m,d, robot_nh);
-    gripper->proc(m,d, robot_nh);    
+    gripper->proc(m,d, robot_nh, fb_tracker);    
     
     // other "modules"
     fb_tracker->proc(m,d);

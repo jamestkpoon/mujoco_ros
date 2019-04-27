@@ -31,8 +31,6 @@ struct ThreadedBodyLocker
     bool init();
     void proc(mjModel* m, mjData* d,
       FreeBodyTracker* fb_tracker);
-    
-    
   
   private:
 

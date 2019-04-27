@@ -52,7 +52,7 @@ void Randomizer::proc(mjModel* m, mjData* d,
     { phys_shifts.clear(); childTF_shift.clear(); }
   
   for(int i=0; i<(int)randphys_req.size(); i++)
-    handle_request_phys(m,d, randphys_req[i]);
+    handle_request_phys(m,d, fb_tracker, randphys_req[i]);
   randphys_req.clear();
   handle_child_repose_delay(m,d, fb_tracker, childTF_shift_trigger);
   
@@ -79,7 +79,8 @@ bool Randomizer::randomize_physical_cb(mujoco_ros::RandomizePhysicalAttribute::R
   return true;
 }
 
-std::vector<bool> Randomizer::handle_request_tex(mjModel* m, mjData* d, const mujoco_ros::RandomizeTexturalAttribute::Request& req)
+std::vector<bool> Randomizer::handle_request_tex(mjModel* m, mjData* d,
+  const mujoco_ros::RandomizeTexturalAttribute::Request& req)
 {
   std::vector<bool> res_;
 
@@ -116,7 +117,7 @@ std::vector<bool> Randomizer::handle_request_tex(mjModel* m, mjData* d, const mu
 }
 
 std::vector<bool> Randomizer::handle_request_phys(mjModel* m, mjData* d,
-  const mujoco_ros::RandomizePhysicalAttribute::Request& req)
+  FreeBodyTracker* fb_tracker, const mujoco_ros::RandomizePhysicalAttribute::Request& req)
 {
   std::vector<bool> res_;
   
@@ -161,7 +162,7 @@ std::vector<bool> Randomizer::handle_request_phys(mjModel* m, mjData* d,
         for(int p=0; p<nb_; p++)
           if(req.hold_6dof_children[p])
             for(int b=0; b<m->nbody; b++)
-              if(childOK(m,d, b,bI_[p]))
+              if(childOK(m,d, fb_tracker, b,bI_[p]))
               {
                 ChildTF pc_;
                 pc_.bI = b; // child body index
@@ -227,9 +228,10 @@ void Randomizer::undo_randphys(mjModel* m, mjData* d)
 
 //// other
 
-bool Randomizer::childOK(mjModel* m, mjData* d, const int cI, const int pI)
+bool Randomizer::childOK(mjModel* m, mjData* d, FreeBodyTracker* fb_tracker,
+  const int cI, const int pI)
 {
-  if((cI == pI) || (m->body_jntnum[cI] != 6)) return false;
+  if((cI == pI) || (fb_tracker->find_bI(cI) == -1)) return false;
   
   bool ancestry_ = false; int pI_ = cI;
   while(pI_ != 0)

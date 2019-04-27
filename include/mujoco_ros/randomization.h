@@ -68,8 +68,6 @@ class RNG
       else return std::max(lb, std::min(mean + (noise * rand_pm1()), ub));
     }
   
-  
-  
   private:
   
     boost::random::mt19937 rng;
@@ -89,8 +87,6 @@ class Randomizer
     bool init();
     void proc(mjModel* m, mjData* d,
       FreeBodyTracker* fb_tracker);
-      
-      
   
   private:
 
@@ -98,7 +94,8 @@ class Randomizer
     bool randomize_textural_cb(mujoco_ros::RandomizeTexturalAttribute::Request& req, mujoco_ros::RandomizeTexturalAttribute::Response& res);
     bool randomize_physical_cb(mujoco_ros::RandomizePhysicalAttribute::Request& req, mujoco_ros::RandomizePhysicalAttribute::Response& res);
     std::vector<bool> handle_request_tex(mjModel* m, mjData* d, const mujoco_ros::RandomizeTexturalAttribute::Request& req);
-    std::vector<bool> handle_request_phys(mjModel* m, mjData* d, const mujoco_ros::RandomizePhysicalAttribute::Request& req);
+    std::vector<bool> handle_request_phys(mjModel* m, mjData* d,
+      FreeBodyTracker* fb_tracker, const mujoco_ros::RandomizePhysicalAttribute::Request& req);
 
     ros::ServiceServer randtex_srv, randphys_srv;
     std::vector<mujoco_ros::RandomizeTexturalAttribute::Request> randtex_req;
@@ -111,7 +108,7 @@ class Randomizer
     bool undo_tex_shifts, undo_phys_shifts;
     
     // mujoco
-    bool childOK(mjModel* m, mjData* d, const int cI, const int pI);
+    bool childOK(mjModel* m, mjData* d, FreeBodyTracker* fb_tracker, const int cI, const int pI);
     void handle_child_repose_delay(mjModel* m, mjData* d,
       FreeBodyTracker* fb_tracker, delay_trigger& trigger);
     void undo_randtex(mjModel* m, mjData* d);

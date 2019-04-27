@@ -17,9 +17,10 @@
         <mesh file="ur5/robotiq_85_knuckle_link.stl" />
         
         <material name="RobMat" specular="0.9" shininess="0.5" reflectance="0" rgba="0.7 0.7 0.7 1" emission="0" />
+        <material name="RobCapMat" specular="0.9" shininess="0.5" reflectance="0" rgba="0.596 0.96 1 1" emission="0" />
         <material name="GriMat" specular="0.9" shininess="0.5" reflectance="0" rgba="0.1 0.1 0.1 1" emission="0" />
-        <material name="BasketMat" specular="0" shininess="0" reflectance="0" rgba="0.26 0.16 0.16796875 1" emission="0" />
-        <material name="Light" specular="0" shininess="0.6" reflectance="0.9" rgba="0.5 0.5 1 1" emission="0.7" />
+<!--        <material name="BasketMat" specular="0" shininess="0" reflectance="0" rgba="0.26 0.16 0.16796875 1" emission="0" />-->
+<!--        <material name="Light" specular="0" shininess="0.6" reflectance="0.9" rgba="0.5 0.5 1 1" emission="0.7" />-->
         
         
 <!--        <texture name="floor_tex"   type="2d"        builtin="checker" rgb1=".2 .3 .4" rgb2=".1 .2 .3" width="100" height="100" />-->
@@ -49,12 +50,12 @@
         <body name="base_link" pos="0 0 0" quat="1 0 0 0" >
             <inertial pos="0 0 0" quat="0.5 0.5 -0.5 0.5" mass="4" diaginertia="0.0072 0.00443333 0.00443333" />
             <geom name="base_mesh" type="mesh" mesh="base" material="RobMat" />
-            <geom name="base_cap" type="cylinder" pos="0 0 0.14" size="0.06 0.02" rgba="0.596 0.96 1 1" material="RobMat" contype="0" conaffinity="0" />
+            <geom name="base_cap" type="cylinder" pos="0 0 0.14" size="0.06 0.02" material="RobCapMat" contype="0" conaffinity="0" />
 
             <body name="shoulder_link" pos="0 0 0.089159">
                 <inertial pos="0 0 0" mass="3.7" diaginertia="0.0102675 0.0102675 0.00666" />
                 <geom name="shoulder_mesh" type="mesh" mesh="shoulder" material="RobMat" />
-                <geom name="shoulder_cap" type="cylinder" pos="0 0.185 0" quat="0.707107 0.707107 0 0" size="0.06 0.02" rgba="0.596 0.96 1 1" material="RobMat" contype="0" conaffinity="0" />
+                <geom name="shoulder_cap" type="cylinder" pos="0 0.185 0" quat="0.707107 0.707107 0 0" size="0.06 0.02" material="RobCapMat" contype="0" conaffinity="0" />
                 <joint name="joint1" pos="0 0 0" axis="0 0 1" />
 
                 <body name="upper_arm_link" pos="0 0.13585 0" quat="0.707107 0 0.707107 0">
@@ -68,25 +69,25 @@
 
                         <!--camera name="forearm_camera" pos="0 0.1 0.07" euler="3.14159265 0 1.570796" /-->
 
-                        <geom name="forearm_cap" type="cylinder" pos="0 0.17 0" quat="0.707107 0.707107 0 0" size="0.06 0.02" rgba="0.596 0.96 1 1" material="RobMat" contype="0" conaffinity="0" />
+                        <geom name="forearm_cap" type="cylinder" pos="0 0.17 0" quat="0.707107 0.707107 0 0" size="0.06 0.02" material="RobCapMat" contype="0" conaffinity="0" />
                         <joint name="joint3" pos="0 0 0" axis="0 1 0" />
 
                         <body name="wrist1_link" pos="0 0 0.39225" quat="0.707107 0 0.707107 0">
                             <inertial pos="0 0 0" quat="0.5 0.5 -0.5 0.5" mass="1.219" diaginertia="0.21942 0.111173 0.111173" />
                             <geom name="wrist1_mesh" type="mesh" mesh="wrist1" material="RobMat" />
-                            <geom name="wrist1_cap" type="cylinder" pos="0 -0.045 0" quat="0.707107 0.707107 0 0" size="0.04 0.015" rgba="0.596 0.96 1 1" material="RobMat" contype="0" conaffinity="0" />
+                            <geom name="wrist1_cap" type="cylinder" pos="0 -0.045 0" quat="0.707107 0.707107 0 0" size="0.04 0.015" material="RobCapMat" contype="0" conaffinity="0" />
                             <joint name="joint4" pos="0 0 0" axis="0 1 0" />
 
                             <body name="wrist2_link" pos="0 0.093 0">
                                 <inertial pos="0 0 0" quat="0.5 0.5 -0.5 0.5" mass="1.219" diaginertia="0.21942 0.111173 0.111173" />
                                 <geom name="wrist2_mesh" type="mesh" mesh="wrist2" material="RobMat" />
-                                <geom name="wrist2_cap" type="cylinder" pos="0 0 -0.045" quat="0.707107 0 0 0.707107" size="0.04 0.015" rgba="0.596 0.96 1 1" material="RobMat" contype="0" conaffinity="0" />
+                                <geom name="wrist2_cap" type="cylinder" pos="0 0 -0.045" quat="0.707107 0 0 0.707107" size="0.04 0.015" material="RobCapMat" contype="0" conaffinity="0" />
                                 <joint name="joint5" pos="0 0 0" axis="0 0 1" />
 
                                 <body name="wrist3_link" pos="0 0 0.09465" quat="0.707107 0 -0.707107 0" >
                                     <inertial pos="0 0 0" quat="0.5 0.5 -0.5 0.5" mass="0.1879" diaginertia="0.033822 0.0171365 0.0171365" />
                                     <geom name="wrist3_mesh" type="mesh" mesh="wrist3" material="RobMat" contype="1" conaffinity="1" />
-                                    <geom name="wrist3_cap" type="cylinder" pos="0 -0.045 0" quat="0.707107 0.707107 0 0" size="0.04 0.015" rgba="0.596 0.96 1 1" material="RobMat" contype="0" conaffinity="0" />
+                                    <geom name="wrist3_cap" type="cylinder" pos="0 -0.045 0" quat="0.707107 0.707107 0 0" size="0.04 0.015" material="RobCapMat" contype="0" conaffinity="0" />
                                     <joint name="joint6" pos="0 0 0" axis="0 1 0" />
 
 

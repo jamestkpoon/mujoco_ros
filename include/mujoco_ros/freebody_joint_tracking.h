@@ -37,10 +37,9 @@ class FreeBodyTracker
     bool get_tracking_data(const int bI,
       std::vector<double>& pos_tup, std::vector<double>& vel_tup);
     bool shift(mjModel* m, mjData* d, const int bI, const tf::Transform& w_t_tf);
+    int find_bI(const int bI);
   
   private:
-
-    int find_bI(const int bI);
   
     double dt;
     std::vector<FreeBody> free_bodies; int N_FB;
