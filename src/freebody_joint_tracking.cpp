@@ -43,7 +43,7 @@ bool FreeBodyTracker::init(mjModel* m, mjData* d,
       }
       else fb_.jI.clear();
       
-      free_bodies.push_back(fb_);
+      if(!fb_.jI.empty()) free_bodies.push_back(fb_);
     }
   }
   
