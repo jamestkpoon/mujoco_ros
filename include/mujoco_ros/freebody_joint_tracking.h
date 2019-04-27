@@ -15,7 +15,7 @@ struct TrackingData
 
 struct FreeBody
 {
-  int bI, pbI; JointIndex jI[6];
+  int bI, pbI; std::vector<JointIndex> jI;
   TrackingData parent_tracker;
 };
 
@@ -32,12 +32,13 @@ class FreeBodyTracker
     bool init(mjModel* m, mjData* d,
       const std::vector<std::string>& freebody_names);
     void proc(mjModel* m, mjData* d);
-    
+
+    bool body_is_floating(mjModel* m, mjData* d, const int bI);
+    int find_bI(const int bI);    
     bool set_tracking_parent(const int bI, const int tpbI);
     bool get_tracking_data(const int bI,
       std::vector<double>& pos_tup, std::vector<double>& vel_tup);
     bool shift(mjModel* m, mjData* d, const int bI, const tf::Transform& w_t_tf);
-    int find_bI(const int bI);
   
   private:
   
