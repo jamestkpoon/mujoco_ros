@@ -131,18 +131,10 @@ void MujocoNode::reset()
   int grasp_eqI_ = mj_name2id(m, mjOBJ_EQUALITY, "grasp_");
   std::vector<std::string> graspable_body_names_;
   nh.getParam("graspable_bodies", graspable_body_names_);
-  std::vector<int> graspable_geomsI_;
-  for(int i=0; i<(int)graspable_body_names_.size(); i++)
-  {
-    int bI_ = mj_name2id(m, mjOBJ_BODY, graspable_body_names_[i].c_str());
-    if(bI_ != -1)
-      for(int i=0; i<m->body_geomnum[bI_]; i++)
-        graspable_geomsI_.push_back(m->body_geomadr[bI_]+i);
-  }
   
   // init
   ur5->init(m,d, robot_nh, ur5_joint_names_);
-  gripper->init(m,d, robot_nh, gf_,grasp_eqI_,graspable_geomsI_);
+  gripper->init(m,d, robot_nh, gf_,grasp_eqI_,graspable_body_names_);
     
   
 

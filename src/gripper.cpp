@@ -14,7 +14,7 @@ Gripper::Gripper(ros::NodeHandle& nh)
 
 bool Gripper::init(mjModel* m, mjData* d, ros::NodeHandle& nh,
   const std::vector<GripperFinger>& gf,
-  const int grasp_eq_idx, const std::vector<int>& graspable_geomI)
+  const int grasp_eq_idx, const std::vector<std::string>& graspable_body_names)
 {
   N_FINGERS = (int)gf.size();
   
@@ -24,23 +24,24 @@ bool Gripper::init(mjModel* m, mjData* d, ros::NodeHandle& nh,
     for(int i=0; i<7; i++)
       fingers[f].defpose[i] = m->eq_data[7*fingers[f].lock_weldI+i];
 
-  // start locked
+  // start with fingers locked in position
   for(int f=0; f<N_FINGERS; f++) lock_default_pose(m,d, f);
   grip_cmd = gripper_state = false;
-  grasped_bI = -1; nh.setParam("grasped_object", "");
+  grasped_gI = -1; nh.setParam("grasped_object", "");
 
-  // graspable bodies
+  // object grasping equality
   grasp_weldI = grasp_eq_idx;
-  for(size_t i=0; i<graspable_geomI.size(); i++)
-    if(graspable_geomI[i] != -1)
-    {
-      graspable_gI.push_back(graspable_geomI[i]);
-      graspable_bI.push_back(m->geom_bodyid[graspable_gI.back()]);
-      std::string body_name_ = mj_id2name(m, mjOBJ_BODY, graspable_bI.back());
-      graspable_bodies.push_back(body_name_);
-    }
   
-  return true;
+  // graspable geoms indexing
+  for(int i=0; i<(int)graspable_body_names.size(); i++)
+  {
+    int bI_ = mj_name2id(m, mjOBJ_BODY, graspable_body_names[i].c_str());
+    if(bI_ != -1)
+      for(int j=0; j<m->body_geomnum[bI_]; j++)
+        graspable_gI.push_back(m->body_geomadr[bI_]+j);
+  }
+  
+  return ((N_FINGERS != 0) && (grasp_weldI != -1) && !graspable_gI.empty());
 }
 
 void Gripper::proc(mjModel* m, mjData* d, ros::NodeHandle& nh,
@@ -64,34 +65,34 @@ void Gripper::proc(mjModel* m, mjData* d, ros::NodeHandle& nh,
   
   if(gripper_state) // close
   {
-    if((grasped_bI == -1) && grasp_checks(m,d))
+    if((grasped_gI == -1) && grasp_checks(m,d))
     {
       // lock ftips
       for(int f=0; f<N_FINGERS; f++)
         set_weld_relpose(m,d, fingers[f].lock_weldI);
       // set grasp weld + rosparam
-      m->eq_obj2id[grasp_weldI] = graspable_bI[grasped_bI];
+      m->eq_obj2id[grasp_weldI] = m->geom_bodyid[grasped_gI];
       set_weld_relpose(m,d, grasp_weldI, graspedTF);
-      nh.setParam("grasped_object", graspable_bodies[grasped_bI]);
+      nh.setParam("grasped_object", mj_id2name(m, mjOBJ_BODY, m->geom_bodyid[grasped_gI]));
       
       // check available free-body tracking for grasped object
-      fb_track = (fb_tracker->find_bI(graspable_bI[grasped_bI]) != -1);
+      fb_track = (fb_tracker->find_bI(m->geom_bodyid[grasped_gI]) != -1);
     }
     
     // free body tracking for grasped object
-    if((grasped_bI != -1) && fb_track)
+    if((grasped_gI != -1) && fb_track)
     {
       tf::Transform w_g_tf_; xpose_to_tf(m,d, w_g_tf_, m->eq_obj1id[grasp_weldI]);
       tf::Transform w_go_tf_ = w_g_tf_ * graspedTF;
-      fb_tracker->shift(m,d, graspable_bI[grasped_bI], w_go_tf_);
+      fb_tracker->shift(m,d, m->geom_bodyid[grasped_gI], w_go_tf_);
     }
   }
   else // open
   {
-    if(grasped_bI != -1) // clear grasp
+    if(grasped_gI != -1) // clear grasp
     {
-      m->eq_active[grasp_weldI] = false; grasped_bI = -1;
-      nh.setParam("grasped_object", "");
+      m->eq_active[grasp_weldI] = false;
+      grasped_gI = -1; nh.setParam("grasped_object", "");
     }
     
     // lock fingertips if drivers moved far enough
@@ -152,7 +153,7 @@ bool Gripper::grasp_checks(mjModel* m, mjData* d)
 {
   for(int i=0; i<(int)graspable_gI.size(); i++)
     if(grasp_check(m,d, graspable_gI[i]))
-      { grasped_bI = i; return true; }
+      { grasped_gI = graspable_gI[i]; return true; }
   
   return false;
 }

@@ -29,7 +29,7 @@ class Gripper
   
     bool init(mjModel* m, mjData* d, ros::NodeHandle& nh,
       const std::vector<GripperFinger>& gf,
-      const int grasp_eq_idx, const std::vector<int>& graspable_geomI);
+      const int grasp_eq_idx, const std::vector<std::string>& graspable_body_names);
     void proc(mjModel* m, mjData* d, ros::NodeHandle& nh,
       FreeBodyTracker* fb_tracker);   
 
@@ -55,9 +55,8 @@ class Gripper
     bool grasp_checks(mjModel* m, mjData* d);
     bool grasp_check(mjModel* m, mjData* d, const int target_gI);
     
-    int grasp_weldI, grasped_bI;
-    std::vector<int> graspable_gI, graspable_bI;
-    std::vector<std::string> graspable_bodies;
+    int grasp_weldI, grasped_gI;
+    std::vector<int> graspable_gI;
     tf::Transform graspedTF; bool fb_track;
     
 };
