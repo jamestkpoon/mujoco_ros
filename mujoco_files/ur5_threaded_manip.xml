@@ -40,6 +40,8 @@
         <mesh file="objects/shaft_rot.stl" scale="0.001 0.001 0.001"/>
     </asset>
     
+    
+    
     <worldbody>
         <!-- lights -->
         <light pos="0.3 0 2" directional="false" dir="0 0 -1" />
@@ -51,7 +53,7 @@
         <geom name="table" pos="0.3 0 -0.0025" size="0.4 0.4 0.005" type="box" material="BenchMat"/>
         
         <!-- ROS camera -->        
-        <body pos="1.120951 -0.015672 0.335584" euler="-0.042834 -0.267927 -3.119534"> <!-- rotations *= -1 ? -->
+        <body name="ros_cam_body" pos="1.120951 -0.015672 0.335584" euler="-0.042834 -0.267927 -3.119534"> <!-- rotations *= -1 ? -->
             <camera name="ros_cam" euler="-1.5708 -1.5708 0" fovy="43.3" />
         </body>
 

@@ -34,7 +34,7 @@ struct tex_shift
 
 struct phys_shift
 {
-  std::vector<JointIndex> jI;
+  std::vector<JointIndex> jI; int bI;
   std::vector<double> offsets;
 };
 
@@ -103,17 +103,18 @@ class Randomizer
     
     bool undo_tex_cb(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res);
     bool undo_phys_cb(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res);
+    void undo_randtex(mjModel* m, mjData* d);
+    void undo_randphys(mjModel* m, mjData* d);
     
     ros::ServiceServer undotex_srv, undophys_srv;
     bool undo_tex_shifts, undo_phys_shifts;
     
     // mujoco
+    void offset_disjointed_body(mjModel* m, mjData* d, const phys_shift& shift);
     bool childOK(mjModel* m, mjData* d, FreeBodyTracker* fb_tracker, const int cI, const int pI);
     void handle_child_repose_delay(mjModel* m, mjData* d,
       FreeBodyTracker* fb_tracker, delay_trigger& trigger);
-    void undo_randtex(mjModel* m, mjData* d);
-    void undo_randphys(mjModel* m, mjData* d);
-    
+
     std::vector<ChildTF> childTF_shift; delay_trigger childTF_shift_trigger, childTF_undo_trigger;
     std::vector<tex_shift> tex_shifts; std::vector<phys_shift> phys_shifts;
     

@@ -23,6 +23,8 @@ struct JointIndex
 
 // helper fns
 
+void tfQuat_to_eul(const tf::Quaternion& q, double& r, double& p, double& y);
+
 void xpose_to_tf(mjModel* m, mjData* d, tf::Transform& tf_out, const int bI);
 void xpose_to_tf_rel(mjModel* m, mjData* d, tf::Transform& tf_out, const int pbI, const int cbI);
 void transform_to_6tuple(std::vector<double>& tup, const tf::Transform& pose_tf);

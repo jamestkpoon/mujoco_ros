@@ -2,6 +2,13 @@
 
 
 
+void tfQuat_to_eul(const tf::Quaternion& q, double& r, double& p, double& y)
+{
+  tf::Matrix3x3 m_(q); m_.getRPY(r,p,y);
+}
+
+
+
 void xpose_to_tf(mjModel* m, mjData* d, tf::Transform& tf_out, const int bI)
 {
   tf_out.setOrigin(tf::Vector3(d->xpos[3*bI+0], d->xpos[3*bI+1], d->xpos[3*bI+2]));
@@ -18,8 +25,7 @@ void xpose_to_tf_rel(mjModel* m, mjData* d, tf::Transform& tf_out, const int pbI
 
 void transform_to_6tuple(std::vector<double>& tup, const tf::Transform& pose_tf)
 {
-  tf::Matrix3x3 m_(pose_tf.getRotation());
-  double eul_[3]; m_.getRPY(eul_[0], eul_[1], eul_[2]);
+  double eul_[3]; tfQuat_to_eul(pose_tf.getRotation(), eul_[0],eul_[1],eul_[2]);
   
   tup.resize(6); // [ tx,ty,tz, rx,ry,rz ]
   for(int i=0; i<3; i++)

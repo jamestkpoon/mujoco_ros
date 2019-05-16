@@ -49,7 +49,7 @@ void Gripper::proc(mjModel* m, mjData* d, ros::NodeHandle& nh,
 {
   if(gripper_state != grip_cmd)
   {
-    // unlock ftip welds, set motor torquess
+    // unlock ftip welds, set motor torques
     double torque_;
     if(grip_cmd) torque_ = driver_torque; // close
     else torque_ = -driver_torque; // open

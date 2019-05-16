@@ -123,12 +123,23 @@ std::vector<bool> Randomizer::handle_request_phys(mjModel* m, mjData* d,
   
   // get body indices, check joint data lengths
   int nb_ = (int)req.body_names.size(), bI_[nb_], nj_[nb_], nj_cumsum_=0;
+  std::vector<bool> jointed_(nb_, true);
   for(int i=0; i<nb_; i++)
   {
     bI_[i] = mj_name2id(m, mjOBJ_BODY, req.body_names[i].c_str());
-    if(bI_[i] != -1) { nj_[i] = m->body_jntnum[bI_[i]]; nj_cumsum_ += nj_[i]; }
+    if(bI_[i] != -1)
+    {
+      nj_[i] = m->body_jntnum[bI_[i]];
+      if(nj_[i] == 0) { nj_[i] = 6; jointed_[i] = false; }
+      
+      nj_cumsum_ += nj_[i];
+    }
     else return res_;
   }
+  
+//  int cam_bI_ = mj_name2id(m, mjOBJ_BODY, "ros_cam_body");
+//  ROS_INFO("%d %d", cam_bI_, m->body_jntnum[cam_bI_]);
+//  m->body_pos[cam_bI_*3+0] += 1.0;
   
   // randomize if total lengths match
   if((nj_cumsum_ == (int)req.noise.size()) && (nb_ == (int)req.hold_6dof_children.size()))
@@ -136,40 +147,45 @@ std::vector<bool> Randomizer::handle_request_phys(mjModel* m, mjData* d,
     int noiseI_ = 0;
     for(int i=0; i<nb_; i++)
     {
-      if(m->body_jntnum[bI_[i]] == 0) res_.push_back(false);
-      else
+      // parent body
+      phys_shift phys_shift_; phys_shift_.bI = bI_[i];
+      phys_shift_.offsets.resize(nj_[i]);
+      
+      for(int j=0; j<nj_[i]; j++)
+        phys_shift_.offsets[j] = req.noise[noiseI_++] * rng->rand_pm1();
+      
+      if(jointed_[i]) // adjust joints
       {
-        // backup struct
-        phys_shift phys_shift_;
         phys_shift_.jI.resize(nj_[i]);
-        phys_shift_.offsets.resize(nj_[i]);
         
-        // parent body
         for(int j=0; j<nj_[i]; j++)
         {
-          JointIndex& jI_ = phys_shift_.jI[j]; jI_.I = m->body_jntadr[bI_[i]];
+          JointIndex& jI_ = phys_shift_.jI[j]; jI_.I = m->body_jntadr[phys_shift_.bI];
           jI_.p = m->jnt_qposadr[jI_.I+j]; jI_.v = m->jnt_dofadr[jI_.I+j];
-          
-          phys_shift_.offsets[j] = req.noise[noiseI_++] * rng->rand_pm1();
+
           d->qpos[jI_.p] += phys_shift_.offsets[j];
           d->qvel[jI_.v] = 0.0;
         }
-        
-        phys_shifts.push_back(phys_shift_);
-        res_.push_back(true);
-
-        // children
-        for(int p=0; p<nb_; p++)
-          if(req.hold_6dof_children[p])
-            for(int b=0; b<m->nbody; b++)
-              if(childOK(m,d, fb_tracker, b,bI_[p]))
-              {
-                ChildTF pc_;
-                pc_.bI = b; // child body index
-                xpose_to_tf(m,d, pc_.pose, b); // child pose wrt world
-                childTF_shift.push_back(pc_);
-              }
       }
+      else // adjust jointless body
+      {
+        phys_shift_.jI.clear();
+        offset_disjointed_body(m,d, phys_shift_);
+      }
+      
+      phys_shifts.push_back(phys_shift_);
+      res_.push_back(true);
+
+      // children
+      if(req.hold_6dof_children[i])
+        for(int b=0; b<m->nbody; b++)
+          if(childOK(m,d, fb_tracker, b,phys_shift_.bI))
+          {
+            ChildTF pc_;
+            pc_.bI = b; // child body index
+            xpose_to_tf(m,d, pc_.pose, b); // child pose wrt world
+            childTF_shift.push_back(pc_);
+          }
     }
     
     childTF_shift_trigger.next = !childTF_shift.empty();
@@ -214,10 +230,17 @@ void Randomizer::undo_randphys(mjModel* m, mjData* d)
   for(int i=(int)phys_shifts.size()-1; i>-1; i--)
   {
     phys_shift& ps_ = phys_shifts[i];
-    for(int j=0; j<(int)ps_.jI.size(); j++)
+    
+    if(!ps_.jI.empty())
+      for(int j=0; j<(int)ps_.jI.size(); j++)
+      {
+        d->qpos[ps_.jI[j].p] -= ps_.offsets[j];
+        d->qvel[ps_.jI[j].v] = 0.0;
+      }
+    else
     {
-      d->qpos[ps_.jI[j].p] -= ps_.offsets[j];
-      d->qvel[ps_.jI[j].v] = 0.0;
+      for(int j=0; j<6; j++) ps_.offsets[j] = -ps_.offsets[j];
+      offset_disjointed_body(m,d, ps_);
     }
   }
   phys_shifts.clear();
@@ -226,7 +249,32 @@ void Randomizer::undo_randphys(mjModel* m, mjData* d)
 }
 
 
+
 //// other
+
+void Randomizer::offset_disjointed_body(mjModel* m, mjData* d,
+  const phys_shift& shift)
+{
+  geometry_msgs::Quaternion quat_msg_;
+  quat_msg_.x = m->body_quat[shift.bI*4+1];
+  quat_msg_.y = m->body_quat[shift.bI*4+2];
+  quat_msg_.z = m->body_quat[shift.bI*4+3];
+  quat_msg_.w = m->body_quat[shift.bI*4+0];
+  tf::Quaternion quat_; tf::quaternionMsgToTF(quat_msg_, quat_);
+  double eul_[3]; tfQuat_to_eul(quat_, eul_[0],eul_[1],eul_[2]);
+  
+  for(int j=0; j<3; j++)
+  {
+    m->body_pos[3*shift.bI+j] += shift.offsets[j];
+    eul_[j] += shift.offsets[3+j];
+  }
+  
+  quat_msg_ = tf::createQuaternionMsgFromRollPitchYaw(eul_[0],eul_[1],eul_[2]);
+  m->body_quat[shift.bI*4+1] = quat_msg_.x;
+  m->body_quat[shift.bI*4+2] = quat_msg_.y;
+  m->body_quat[shift.bI*4+3] = quat_msg_.z;
+  m->body_quat[shift.bI*4+0] = quat_msg_.w;
+}
 
 bool Randomizer::childOK(mjModel* m, mjData* d, FreeBodyTracker* fb_tracker,
   const int cI, const int pI)
